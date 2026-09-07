@@ -56,7 +56,8 @@
   }
   #themeToggle svg{ width: 17px; height: 17px; }
 
-  .controls-row{ display:flex; justify-content: flex-end; margin-bottom: 20px; }
+  .controls-row{ display:flex; justify-content: flex-end; align-items:center; gap: 8px; margin-bottom: 20px; }
+  .range-label{ font-size: 13px; color: var(--ink-soft); }
   select{
     font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 12px; background: var(--panel);
     color: var(--ink); border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
@@ -120,7 +121,10 @@
   </header>
 
   <div class="controls-row">
-    <select id="weekFilter"><option>Loading weeks…</option></select>
+    <label class="range-label" for="fromFilter">From</label>
+    <select id="fromFilter"><option>Loading weeks…</option></select>
+    <label class="range-label" for="toFilter">To</label>
+    <select id="toFilter"><option>Loading weeks…</option></select>
   </div>
 
   <div class="kpi-row" id="kpiRow">
@@ -224,9 +228,10 @@ function parseDMY(str) {
   return new Date(y, m - 1, d);
 }
 
-function wowBadge(curr, prev, higherIsBetter) {
+function wowBadge(curr, prev, higherIsBetter, periodLabel) {
+  periodLabel = periodLabel || 'vs last week';
   if (curr === null || curr === undefined || prev === null || prev === undefined || prev === 0) {
-    return '<div class="wow flat">n/a vs last week</div>';
+    return `<div class="wow flat">n/a ${periodLabel}</div>`;
   }
   const pct = ((curr - prev) / Math.abs(prev)) * 100;
   const rounded = Math.round(pct * 10) / 10;
@@ -236,7 +241,7 @@ function wowBadge(curr, prev, higherIsBetter) {
     const isGood = higherIsBetter ? curr > prev : curr < prev;
     cls = isGood ? 'good' : 'bad';
   }
-  return `<div class="wow ${cls}">${arrow} ${Math.abs(rounded)}% vs last week</div>`;
+  return `<div class="wow ${cls}">${arrow} ${Math.abs(rounded)}% ${periodLabel}</div>`;
 }
 
 // ---- STATE ---------------------------------------------------------------
@@ -253,42 +258,71 @@ function destroyChart(key) {
   if (charts[key]) { charts[key].destroy(); delete charts[key]; }
 }
 
-function renderKpis(rows, idx) {
-  const curr = rows[idx];
-  const prev = idx > 0 ? rows[idx - 1] : null;
-  const num = (r, key) => toNumber(r ? r[key] : null);
+function avgMetric(range, key) {
+  const vals = range.map(r => toNumber(r[key])).filter(v => v !== null);
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+function sumMetric(range, key) {
+  const vals = range.map(r => toNumber(r[key])).filter(v => v !== null);
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0);
+}
+function round1(n) { return n === null ? null : Math.round(n * 10) / 10; }
+
+function renderKpis(fromIdx, toIdx) {
+  const range = teamRows.slice(fromIdx, toIdx + 1);
+  const rangeLen = range.length;
+  const prevStart = fromIdx - rangeLen;
+  const prevRange = prevStart >= 0 ? teamRows.slice(prevStart, fromIdx) : [];
+  const periodLabel = rangeLen === 1 ? 'vs last week' : `vs previous ${rangeLen} weeks`;
+
+  const wow = (curr, prev, higherIsBetter) => wowBadge(curr, prev, higherIsBetter, periodLabel);
+
+  const csat = round1(avgMetric(range, 'CSAT (avg score)'));
+  const csatPrev = prevRange.length ? avgMetric(prevRange, 'CSAT (avg score)') : null;
+  const res = round1(avgMetric(range, 'Resolution time (hrs)'));
+  const resPrev = prevRange.length ? avgMetric(prevRange, 'Resolution time (hrs)') : null;
+  const rt = round1(avgMetric(range, 'Human response time (hrs)'));
+  const rtPrev = prevRange.length ? avgMetric(prevRange, 'Human response time (hrs)') : null;
+  const open_ = toNumber(range[range.length - 1]['Open tickets']);
+  const openPrev = prevRange.length ? toNumber(prevRange[prevRange.length - 1]['Open tickets']) : null;
+  const created = sumMetric(range, 'Tickets created');
+  const createdPrev = prevRange.length ? sumMetric(prevRange, 'Tickets created') : null;
+  const closed = sumMetric(range, 'Tickets closed');
+  const closedPrev = prevRange.length ? sumMetric(prevRange, 'Tickets closed') : null;
 
   const kpiRow = document.getElementById('kpiRow');
   kpiRow.innerHTML = `
     <div class="kpi">
-      <div class="label">CSAT</div>
-      <div class="value-row"><span class="value">${curr['CSAT (avg score)'] ?? '—'}</span></div>
-      ${wowBadge(num(curr,'CSAT (avg score)'), num(prev,'CSAT (avg score)'), true)}
+      <div class="label">CSAT${rangeLen > 1 ? ' (avg)' : ''}</div>
+      <div class="value-row"><span class="value">${csat ?? '—'}</span></div>
+      ${wow(csat, csatPrev, true)}
     </div>
     <div class="kpi">
-      <div class="label">Resolution time</div>
-      <div class="value-row"><span class="value">${curr['Resolution time (hrs)'] ?? '—'}</span><span class="unit">hrs</span></div>
-      ${wowBadge(num(curr,'Resolution time (hrs)'), num(prev,'Resolution time (hrs)'), false)}
+      <div class="label">Resolution time${rangeLen > 1 ? ' (avg)' : ''}</div>
+      <div class="value-row"><span class="value">${res ?? '—'}</span><span class="unit">hrs</span></div>
+      ${wow(res, resPrev, false)}
     </div>
     <div class="kpi">
-      <div class="label">Human response time</div>
-      <div class="value-row"><span class="value">${curr['Human response time (hrs)'] ?? '—'}</span><span class="unit">hrs</span></div>
-      ${wowBadge(num(curr,'Human response time (hrs)'), num(prev,'Human response time (hrs)'), false)}
+      <div class="label">Human response time${rangeLen > 1 ? ' (avg)' : ''}</div>
+      <div class="value-row"><span class="value">${rt ?? '—'}</span><span class="unit">hrs</span></div>
+      ${wow(rt, rtPrev, false)}
     </div>
     <div class="kpi">
-      <div class="label">Open tickets</div>
-      <div class="value-row"><span class="value">${curr['Open tickets'] ?? '—'}</span></div>
-      ${wowBadge(num(curr,'Open tickets'), num(prev,'Open tickets'), false)}
+      <div class="label">Open tickets${rangeLen > 1 ? ' (end of range)' : ''}</div>
+      <div class="value-row"><span class="value">${open_ ?? '—'}</span></div>
+      ${wow(open_, openPrev, false)}
     </div>
     <div class="kpi">
-      <div class="label">Tickets created</div>
-      <div class="value-row"><span class="value">${curr['Tickets created'] ?? '—'}</span></div>
-      ${wowBadge(num(curr,'Tickets created'), num(prev,'Tickets created'), null)}
+      <div class="label">Tickets created${rangeLen > 1 ? ' (total)' : ''}</div>
+      <div class="value-row"><span class="value">${created ?? '—'}</span></div>
+      ${wow(created, createdPrev, null)}
     </div>
     <div class="kpi">
-      <div class="label">Tickets closed</div>
-      <div class="value-row"><span class="value">${curr['Tickets closed'] ?? '—'}</span></div>
-      ${wowBadge(num(curr,'Tickets closed'), num(prev,'Tickets closed'), null)}
+      <div class="label">Tickets closed${rangeLen > 1 ? ' (total)' : ''}</div>
+      <div class="value-row"><span class="value">${closed ?? '—'}</span></div>
+      ${wow(closed, closedPrev, null)}
     </div>
   `;
 }
@@ -353,17 +387,25 @@ function renderTrendCharts(rows) {
   });
 }
 
-function renderFieldsChart(fieldName, uptoWeek) {
+function renderFieldsChart(fieldName, fromWeek, toWeek) {
   activeField = fieldName;
   const p = palette();
-  const uptoDate = parseDMY(uptoWeek);
-  const rows = fieldsRows.filter(r => r['Field'] === fieldName && parseDMY(r['Week start (Monday)']) <= uptoDate);
+  const fromDate = parseDMY(fromWeek);
+  const toDate = parseDMY(toWeek);
+  const rows = fieldsRows.filter(r => {
+    if (r['Field'] !== fieldName) return false;
+    const d = parseDMY(r['Week start (Monday)']);
+    return d >= fromDate && d <= toDate;
+  });
   if (!rows.length) return;
 
-  const latestWeek = rows.reduce((max, r) => parseDMY(r['Week start (Monday)']) > parseDMY(max) ? r['Week start (Monday)'] : max, rows[0]['Week start (Monday)']);
-  const latestRows = rows.filter(r => r['Week start (Monday)'] === latestWeek)
-    .map(r => ({ value: r['Value'], count: toNumber(r['Tickets']) || 0 }))
+  const totals = {};
+  rows.forEach(r => { totals[r['Value']] = (totals[r['Value']] || 0) + (toNumber(r['Tickets']) || 0); });
+  const summedRows = Object.entries(totals)
+    .map(([value, count]) => ({ value, count }))
     .sort((a, b) => b.count - a.count);
+
+  const rangeSuffix = fromWeek === toWeek ? `week of ${toWeek}` : `${fromWeek} – ${toWeek}`;
 
   destroyChart('fields');
   const canvas = document.getElementById('fieldsChart');
@@ -375,8 +417,8 @@ function renderFieldsChart(fieldName, uptoWeek) {
     charts.fields = new Chart(canvas, {
       type: 'doughnut',
       data: {
-        labels: latestRows.map(r => r.value),
-        datasets: [{ data: latestRows.map(r => r.count), backgroundColor: latestRows.map((_, i) => qualitative[i % qualitative.length]), borderColor: p.panel || '#fff', borderWidth: 2 }],
+        labels: summedRows.map(r => r.value),
+        datasets: [{ data: summedRows.map(r => r.count), backgroundColor: summedRows.map((_, i) => qualitative[i % qualitative.length]), borderColor: p.panel || '#fff', borderWidth: 2 }],
       },
       options: {
         responsive: true,
@@ -390,8 +432,8 @@ function renderFieldsChart(fieldName, uptoWeek) {
     charts.fields = new Chart(canvas, {
       type: 'bar',
       data: {
-        labels: latestRows.map(r => r.value),
-        datasets: [{ label: `Tickets (week of ${latestWeek})`, data: latestRows.map(r => r.count), backgroundColor: p.accent }],
+        labels: summedRows.map(r => r.value),
+        datasets: [{ label: `Tickets (${rangeSuffix})`, data: summedRows.map(r => r.count), backgroundColor: p.accent }],
       },
       options: {
         indexAxis: 'y',
@@ -407,24 +449,40 @@ function renderFieldsChart(fieldName, uptoWeek) {
 }
 
 function renderAll() {
-  const select = document.getElementById('weekFilter');
-  const idx = Number(select.value);
-  const rowsUpTo = teamRows.slice(0, idx + 1);
+  const fromSelect = document.getElementById('fromFilter');
+  const toSelect = document.getElementById('toFilter');
+  const fromIdx = Number(fromSelect.value);
+  const toIdx = Number(toSelect.value);
+  const range = teamRows.slice(fromIdx, toIdx + 1);
 
-  renderKpis(teamRows, idx);
-  renderTrendCharts(rowsUpTo);
-  renderFieldsChart(activeField, teamRows[idx]['Week start (Monday)']);
+  renderKpis(fromIdx, toIdx);
+  renderTrendCharts(range);
+  renderFieldsChart(activeField, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
+}
+
+function weekOptionLabel(r, i) {
+  const dateNoYear = (r['Week start (Monday)'] || '').split('/').slice(0, 2).join('/');
+  return `Week ${r['ISO week']} · ${dateNoYear}`;
 }
 
 function populateWeekFilter() {
-  const select = document.getElementById('weekFilter');
-  select.innerHTML = teamRows.map((r, i) => {
-    const dateNoYear = (r['Week start (Monday)'] || '').split('/').slice(0, 2).join('/');
-    const label = `Week ${r['ISO week']} · ${dateNoYear}`;
-    return `<option value="${i}">${label}${i === teamRows.length - 1 ? ' (latest)' : ''}</option>`;
-  }).join('');
-  select.value = teamRows.length - 1;
-  select.addEventListener('change', renderAll);
+  const fromSelect = document.getElementById('fromFilter');
+  const toSelect = document.getElementById('toFilter');
+  const optionsHtml = teamRows.map((r, i) => `<option value="${i}">${weekOptionLabel(r, i)}</option>`).join('');
+
+  fromSelect.innerHTML = optionsHtml;
+  toSelect.innerHTML = optionsHtml;
+  fromSelect.value = 0;
+  toSelect.value = teamRows.length - 1;
+
+  fromSelect.addEventListener('change', () => {
+    if (Number(fromSelect.value) > Number(toSelect.value)) toSelect.value = fromSelect.value;
+    renderAll();
+  });
+  toSelect.addEventListener('change', () => {
+    if (Number(toSelect.value) < Number(fromSelect.value)) fromSelect.value = toSelect.value;
+    renderAll();
+  });
 }
 
 // ---- THEME ---------------------------------------------------------------
@@ -471,8 +529,9 @@ async function init() {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.field-toggle button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const select = document.getElementById('weekFilter');
-        renderFieldsChart(btn.dataset.field, teamRows[Number(select.value)]['Week start (Monday)']);
+        const fromIdx = Number(document.getElementById('fromFilter').value);
+        const toIdx = Number(document.getElementById('toFilter').value);
+        renderFieldsChart(btn.dataset.field, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
       });
     });
 
