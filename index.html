@@ -159,14 +159,14 @@ let fieldsData = [];
 let fieldsChart;
 
 async function init() {
-  if (typeof Chart === 'undefined') throw new Error('Chart.js did not load (CDN script blocked or too slow).');
-  if (typeof Papa === 'undefined') throw new Error('PapaParse did not load (CDN script blocked or too slow).');
-
-  Chart.defaults.font.family = "'Inter', sans-serif";
-  Chart.defaults.color = palette.soft;
-  Chart.defaults.borderColor = palette.line;
-
   try {
+    if (typeof Chart === 'undefined') throw new Error('Chart.js did not load (CDN script blocked or too slow).');
+    if (typeof Papa === 'undefined') throw new Error('PapaParse did not load (CDN script blocked or too slow).');
+
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = palette.soft;
+    Chart.defaults.borderColor = palette.line;
+
     const [team, fields] = await Promise.all([
       fetchTab('Team performance'),
       fetchTab('Ticket fields'),
@@ -264,7 +264,11 @@ document.querySelectorAll('.field-toggle button').forEach(btn => {
   });
 });
 
-init();
+init().catch((e) => {
+  document.querySelector('.wrap').insertAdjacentHTML('beforeend',
+    `<div class="error">Something broke before the dashboard could even start: ${e.message}</div>`);
+  console.error(e);
+});
 
 } catch (fatalErr) {
   document.querySelector('.wrap').insertAdjacentHTML('beforeend',
