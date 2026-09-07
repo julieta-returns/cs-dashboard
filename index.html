@@ -767,13 +767,18 @@ function populateChildSelect(parent) {
 function renderReasonTrend() {
   const select = document.getElementById('reasonSelect');
   const reason = select.value;
-  const p = palette();
 
   const fromIdx = Number(document.getElementById('fromFilter').value);
   const toIdx = Number(document.getElementById('toFilter').value);
   const fromIso = toNumber(teamRows[fromIdx]['ISO week']);
   const toIso = toNumber(teamRows[toIdx]['ISO week']);
 
+  if (reason === 'Return') {
+    renderReturnDecomposition(fromIso, toIso);
+    return;
+  }
+
+  const p = palette();
   const rows = fieldsRows
     .filter(r => r['Field'] === 'Contact Reason' && r['Value'] === reason)
     .filter(r => { const iso = toNumber(r['ISO week']); return iso >= fromIso && iso <= toIso; })
@@ -789,6 +794,53 @@ function renderReasonTrend() {
     options: {
       responsive: true,
       plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft, precision: 0 } },
+        x: { grid: { display: false }, ticks: { ...thinTicks(), color: p.soft } },
+      },
+    },
+  });
+}
+
+// Return is the Contact Reason that feeds into Retention Offer, so instead of
+// one flat line, show the trend broken down by outcome (Accepted, Declined,
+// Waiting, Exchange), so this doubles as "what's driving Return over time".
+function renderReturnDecomposition(fromIso, toIso) {
+  const p = palette();
+  const weeks = teamRows.filter(w => {
+    const iso = toNumber(w['ISO week']);
+    return iso >= fromIso && iso <= toIso;
+  });
+  const labels = weeks.map(w => w['Week start (Monday)']);
+
+  const byValue = {};
+  fieldsRows.filter(r => r['Field'] === 'Retention Offer' && r['Value'] !== 'N/A').forEach(r => {
+    const iso = toNumber(r['ISO week']);
+    const wIdx = weeks.findIndex(w => toNumber(w['ISO week']) === iso);
+    if (wIdx === -1) return;
+    if (!byValue[r['Value']]) byValue[r['Value']] = new Array(weeks.length).fill(0);
+    byValue[r['Value']][wIdx] += toNumber(r['Tickets']) || 0;
+  });
+
+  const qualitative = [p.accent, p.gold, p.rust, p.green, '#6B7FA3', '#8B5FBF', '#4F8FA3'];
+  const values = Object.keys(byValue);
+
+  destroyChart('reasonTrend');
+  charts.reasonTrend = new Chart(document.getElementById('reasonTrendChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: values.map((value, i) => ({
+        label: value,
+        data: byValue[value],
+        borderColor: qualitative[i % qualitative.length],
+        backgroundColor: qualitative[i % qualitative.length],
+        tension: 0.25, pointRadius: 2, fill: false,
+      })),
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { color: p.soft, boxWidth: 10, usePointStyle: true } } },
       scales: {
         y: { beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft, precision: 0 } },
         x: { grid: { display: false }, ticks: { ...thinTicks(), color: p.soft } },
@@ -868,9 +920,9 @@ function renderReasonAlerts(snapshot) {
 }
 
 function renderMovers(snapshot) {
-  const withDelta = snapshot.filter(r => r.deltaAbs !== null && r.deltaAbs !== 0);
-  const up = withDelta.filter(r => r.deltaAbs > 0).sort((a, b) => b.deltaAbs - a.deltaAbs).slice(0, 3);
-  const down = withDelta.filter(r => r.deltaAbs < 0).sort((a, b) => a.deltaAbs - b.deltaAbs).slice(0, 3);
+  const withDelta = snapshot.filter(r => r.deltaPct !== null && r.deltaPct !== 0);
+  const up = withDelta.filter(r => r.deltaPct > 0).sort((a, b) => b.deltaPct - a.deltaPct).slice(0, 3);
+  const down = withDelta.filter(r => r.deltaPct < 0).sort((a, b) => a.deltaPct - b.deltaPct).slice(0, 3);
 
   const rowHtml = (r, sign) => {
     const pctText = r.deltaPct === null ? '' : ` (${sign > 0 ? '+' : ''}${r.deltaPct.toFixed(0)}%)`;
