@@ -111,6 +111,30 @@
   .banner{ font-size: 13px; color: var(--ink-soft); margin: -8px 0 24px; }
   .banner strong{ color: var(--ink); }
 
+  .alerts{ margin-bottom: 8px; }
+  .alert-item{
+    display:flex; align-items:baseline; gap: 8px; font-size: 13px; padding: 10px 14px; margin-bottom: 8px;
+    border-radius: 6px; border: 1px solid var(--line);
+  }
+  .alert-item.spike{ background: color-mix(in srgb, var(--rust) 10%, var(--panel)); border-color: var(--rust); }
+  .alert-item.new{ background: color-mix(in srgb, var(--gold) 10%, var(--panel)); border-color: var(--gold); }
+  .alert-item .tag{ font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+
+  .movers-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .movers-title{ font-size: 13px; font-weight: 600; margin: 0 0 12px; }
+  .movers-title.up{ color: var(--rust); }
+  .movers-title.down{ color: var(--green); }
+  .mover-row{ display:flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .mover-row:last-child{ border-bottom: none; }
+  .mover-row .name{ color: var(--ink); }
+  .mover-row .delta{ font-weight: 600; white-space: nowrap; }
+
+  .reasons-table{ width: 100%; border-collapse: collapse; font-size: 13px; }
+  .reasons-table th{ text-align: left; font-weight: 500; color: var(--ink-soft); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .reasons-table td{ padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .reasons-table th:nth-child(3), .reasons-table th:nth-child(4), .reasons-table th:nth-child(5),
+  .reasons-table td:nth-child(3), .reasons-table td:nth-child(4), .reasons-table td:nth-child(5){ text-align: right; }
+
   .header-actions{ display:flex; gap: 8px; }
   .icon-btn-text{
     font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; padding: 0 12px; height: 36px;
@@ -202,6 +226,40 @@
   </div>
 
   <div id="tabReasons" class="tab-panel">
+
+    <div class="alerts" id="reasonAlerts"></div>
+
+    <section>
+      <h2>Biggest movers this week</h2>
+      <div class="movers-grid">
+        <div class="panel">
+          <h3 class="movers-title up">Increased most</h3>
+          <div id="moversUp"></div>
+        </div>
+        <div class="panel">
+          <h3 class="movers-title down">Decreased most</h3>
+          <div id="moversDown"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>By category</h2>
+      <div class="chart-box">
+        <canvas id="categoryStackedChart" style="max-height: 320px;"></canvas>
+      </div>
+    </section>
+
+    <section>
+      <h2>All contact reasons this week</h2>
+      <div class="panel">
+        <table class="reasons-table" id="reasonsTable">
+          <thead><tr><th>Category</th><th>Reason</th><th>Tickets</th><th>% of total</th><th>vs last week</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
     <section>
       <h2>Contact reason evolution</h2>
       <div class="panel">
@@ -653,6 +711,149 @@ function renderReasonTrend() {
   });
 }
 
+// ---- CONTACT REASON INSIGHTS ------------------------------------------
+
+function contactReasonSeries() {
+  const byValue = {};
+  fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
+    const value = r['Value'];
+    if (!byValue[value]) byValue[value] = [];
+    byValue[value].push({ date: parseDMY(r['Week start (Monday)']), count: toNumber(r['Tickets']) || 0 });
+  });
+  Object.values(byValue).forEach(arr => arr.sort((a, b) => a.date - b.date));
+  return byValue;
+}
+
+// One row per Contact Reason value, evaluated as of teamRows[toIdx]'s week.
+function getContactReasonSnapshot(toIdx) {
+  const series = contactReasonSeries();
+  const toDate = parseDMY(teamRows[toIdx]['Week start (Monday)']);
+
+  const rows = Object.entries(series).map(([value, points]) => {
+    const idx = points.findIndex(pt => pt.date.getTime() === toDate.getTime());
+    if (idx === -1) return null;
+    const count = points[idx].count;
+    const prevCount = idx > 0 ? points[idx - 1].count : null;
+    const trailing = points.slice(Math.max(0, idx - 4), idx);
+    const trailingAvg = trailing.length ? trailing.reduce((a, b) => a + b.count, 0) / trailing.length : null;
+    const hasHistory = idx > 0;
+    const isNew = hasHistory && trailingAvg === 0 && count > 0;
+    const isSpike = !isNew && trailingAvg !== null && trailingAvg > 0 && count >= 3 && count >= trailingAvg * 1.5;
+    const { parent, child } = splitParentChild(value);
+    return {
+      value, parent, child, count, prevCount, trailingAvg,
+      deltaAbs: prevCount === null ? null : count - prevCount,
+      deltaPct: (prevCount === null || prevCount === 0) ? null : ((count - prevCount) / prevCount) * 100,
+      isNew, isSpike,
+    };
+  }).filter(Boolean);
+
+  const total = rows.reduce((sum, r) => sum + r.count, 0);
+  rows.forEach(r => { r.pctOfTotal = total > 0 ? (r.count / total) * 100 : 0; });
+  return rows;
+}
+
+function renderReasonAlerts(snapshot) {
+  const el = document.getElementById('reasonAlerts');
+  const spikes = snapshot.filter(r => r.isSpike).sort((a, b) => b.count - a.count);
+  const news = snapshot.filter(r => r.isNew).sort((a, b) => b.count - a.count);
+
+  if (!spikes.length && !news.length) { el.innerHTML = ''; return; }
+
+  const spikeHtml = spikes.map(r => `
+    <div class="alert-item spike">
+      <span class="tag">Spike</span>
+      <span>${r.child} (${r.parent}): <strong>${r.count}</strong> tickets this week, vs a ${r.trailingAvg.toFixed(1)} average the past ${Math.min(4, spikes.length)} weeks</span>
+    </div>`).join('');
+  const newHtml = news.map(r => `
+    <div class="alert-item new">
+      <span class="tag">New</span>
+      <span>${r.child} (${r.parent}): <strong>${r.count}</strong> tickets this week, was 0 before that</span>
+    </div>`).join('');
+
+  el.innerHTML = spikeHtml + newHtml;
+}
+
+function renderMovers(snapshot) {
+  const withDelta = snapshot.filter(r => r.deltaAbs !== null && r.deltaAbs !== 0);
+  const up = withDelta.filter(r => r.deltaAbs > 0).sort((a, b) => b.deltaAbs - a.deltaAbs).slice(0, 3);
+  const down = withDelta.filter(r => r.deltaAbs < 0).sort((a, b) => a.deltaAbs - b.deltaAbs).slice(0, 3);
+
+  const rowHtml = (r, sign) => `
+    <div class="mover-row">
+      <span class="name">${r.child}</span>
+      <span class="delta" style="color:${sign > 0 ? 'var(--rust)' : 'var(--green)'}">${sign > 0 ? '+' : ''}${r.deltaAbs} (${r.count} total)</span>
+    </div>`;
+
+  document.getElementById('moversUp').innerHTML = up.length ? up.map(r => rowHtml(r, 1)).join('') : '<div class="mover-row"><span class="name">No increases</span></div>';
+  document.getElementById('moversDown').innerHTML = down.length ? down.map(r => rowHtml(r, -1)).join('') : '<div class="mover-row"><span class="name">No decreases</span></div>';
+}
+
+function renderReasonsTable(snapshot) {
+  const tbody = document.querySelector('#reasonsTable tbody');
+  const sorted = [...snapshot].sort((a, b) => b.count - a.count);
+  tbody.innerHTML = sorted.map(r => {
+    const deltaText = r.deltaAbs === null ? 'n/a' : `${r.deltaAbs > 0 ? '+' : ''}${r.deltaAbs}`;
+    const deltaColor = r.deltaAbs === null ? 'var(--ink-soft)' : r.deltaAbs > 0 ? 'var(--rust)' : r.deltaAbs < 0 ? 'var(--green)' : 'var(--ink-soft)';
+    return `<tr>
+      <td>${r.parent}</td>
+      <td>${r.child}</td>
+      <td>${r.count}</td>
+      <td>${r.pctOfTotal.toFixed(1)}%</td>
+      <td style="color:${deltaColor}">${deltaText}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCategoryStacked(fromIdx, toIdx) {
+  const p = palette();
+  const weeks = teamRows.slice(fromIdx, toIdx + 1);
+  const labels = weeks.map(w => w['Week start (Monday)']);
+
+  const totalsByParentByWeek = {}; // parent -> [count per week, aligned with `weeks`]
+  fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
+    const wIdx = weeks.findIndex(w => w['Week start (Monday)'] === r['Week start (Monday)']);
+    if (wIdx === -1) return;
+    const { parent } = splitParentChild(r['Value']);
+    if (!totalsByParentByWeek[parent]) totalsByParentByWeek[parent] = new Array(weeks.length).fill(0);
+    totalsByParentByWeek[parent][wIdx] += toNumber(r['Tickets']) || 0;
+  });
+
+  const parentGrandTotals = Object.entries(totalsByParentByWeek).map(([parent, arr]) => ({ parent, total: arr.reduce((a, b) => a + b, 0) }));
+  parentGrandTotals.sort((a, b) => b.total - a.total);
+
+  const qualitative = [p.accent, p.gold, p.rust, p.green, '#6B7FA3', '#8B5FBF', '#4F8FA3', '#C97B84', '#9AA65C', '#7A8C99'];
+
+  destroyChart('categoryStacked');
+  charts.categoryStacked = new Chart(document.getElementById('categoryStackedChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: parentGrandTotals.map((pg, i) => ({
+        label: pg.parent,
+        data: totalsByParentByWeek[pg.parent],
+        backgroundColor: qualitative[i % qualitative.length],
+      })),
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { color: p.soft, boxWidth: 10, usePointStyle: true } } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { ...thinTicks(), color: p.soft } },
+        y: { stacked: true, beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft } },
+      },
+    },
+  });
+}
+
+function renderReasonInsights(fromIdx, toIdx) {
+  const snapshot = getContactReasonSnapshot(toIdx);
+  renderReasonAlerts(snapshot);
+  renderMovers(snapshot);
+  renderReasonsTable(snapshot);
+  renderCategoryStacked(fromIdx, toIdx);
+}
+
 function renderAll() {
   const fromSelect = document.getElementById('fromFilter');
   const toSelect = document.getElementById('toFilter');
@@ -664,6 +865,7 @@ function renderAll() {
   renderBestWorstBanner(range);
   renderTrendCharts(range);
   renderFieldsChart(activeField, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
+  renderReasonInsights(fromIdx, toIdx);
   if (document.getElementById('reasonSelect').value) renderReasonTrend();
 }
 
