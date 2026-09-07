@@ -244,13 +244,6 @@
     </section>
 
     <section>
-      <h2>By category</h2>
-      <div class="chart-box">
-        <canvas id="categoryStackedChart" style="max-height: 320px;"></canvas>
-      </div>
-    </section>
-
-    <section>
       <h2>All contact reasons this week</h2>
       <div class="panel">
         <table class="reasons-table" id="reasonsTable">
@@ -718,7 +711,7 @@ function contactReasonSeries() {
   fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
     const value = r['Value'];
     if (!byValue[value]) byValue[value] = [];
-    byValue[value].push({ date: parseDMY(r['Week start (Monday)']), count: toNumber(r['Tickets']) || 0 });
+    byValue[value].push({ date: parseDMY(r['Week start (Monday)']), weekLabel: r['Week start (Monday)'], count: toNumber(r['Tickets']) || 0 });
   });
   Object.values(byValue).forEach(arr => arr.sort((a, b) => a.date - b.date));
   return byValue;
@@ -727,10 +720,10 @@ function contactReasonSeries() {
 // One row per Contact Reason value, evaluated as of teamRows[toIdx]'s week.
 function getContactReasonSnapshot(toIdx) {
   const series = contactReasonSeries();
-  const toDate = parseDMY(teamRows[toIdx]['Week start (Monday)']);
+  const toWeekLabel = teamRows[toIdx]['Week start (Monday)'];
 
   const rows = Object.entries(series).map(([value, points]) => {
-    const idx = points.findIndex(pt => pt.date.getTime() === toDate.getTime());
+    const idx = points.findIndex(pt => pt.weekLabel === toWeekLabel);
     if (idx === -1) return null;
     const count = points[idx].count;
     const prevCount = idx > 0 ? points[idx - 1].count : null;
@@ -805,53 +798,11 @@ function renderReasonsTable(snapshot) {
   }).join('');
 }
 
-function renderCategoryStacked(fromIdx, toIdx) {
-  const p = palette();
-  const weeks = teamRows.slice(fromIdx, toIdx + 1);
-  const labels = weeks.map(w => w['Week start (Monday)']);
-
-  const totalsByParentByWeek = {}; // parent -> [count per week, aligned with `weeks`]
-  fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
-    const wIdx = weeks.findIndex(w => w['Week start (Monday)'] === r['Week start (Monday)']);
-    if (wIdx === -1) return;
-    const { parent } = splitParentChild(r['Value']);
-    if (!totalsByParentByWeek[parent]) totalsByParentByWeek[parent] = new Array(weeks.length).fill(0);
-    totalsByParentByWeek[parent][wIdx] += toNumber(r['Tickets']) || 0;
-  });
-
-  const parentGrandTotals = Object.entries(totalsByParentByWeek).map(([parent, arr]) => ({ parent, total: arr.reduce((a, b) => a + b, 0) }));
-  parentGrandTotals.sort((a, b) => b.total - a.total);
-
-  const qualitative = [p.accent, p.gold, p.rust, p.green, '#6B7FA3', '#8B5FBF', '#4F8FA3', '#C97B84', '#9AA65C', '#7A8C99'];
-
-  destroyChart('categoryStacked');
-  charts.categoryStacked = new Chart(document.getElementById('categoryStackedChart'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: parentGrandTotals.map((pg, i) => ({
-        label: pg.parent,
-        data: totalsByParentByWeek[pg.parent],
-        backgroundColor: qualitative[i % qualitative.length],
-      })),
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'bottom', labels: { color: p.soft, boxWidth: 10, usePointStyle: true } } },
-      scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { ...thinTicks(), color: p.soft } },
-        y: { stacked: true, beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft } },
-      },
-    },
-  });
-}
-
 function renderReasonInsights(fromIdx, toIdx) {
   const snapshot = getContactReasonSnapshot(toIdx);
   renderReasonAlerts(snapshot);
   renderMovers(snapshot);
   renderReasonsTable(snapshot);
-  renderCategoryStacked(fromIdx, toIdx);
 }
 
 function renderAll() {
