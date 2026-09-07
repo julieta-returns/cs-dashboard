@@ -132,8 +132,8 @@
   .reasons-table{ width: 100%; border-collapse: collapse; font-size: 13px; }
   .reasons-table th{ text-align: left; font-weight: 500; color: var(--ink-soft); padding: 8px 10px; border-bottom: 1px solid var(--line); }
   .reasons-table td{ padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  .reasons-table th:nth-child(3), .reasons-table th:nth-child(4), .reasons-table th:nth-child(5),
-  .reasons-table td:nth-child(3), .reasons-table td:nth-child(4), .reasons-table td:nth-child(5){ text-align: right; }
+  .reasons-table th:nth-child(3), .reasons-table th:nth-child(4), .reasons-table th:nth-child(5), .reasons-table th:nth-child(6),
+  .reasons-table td:nth-child(3), .reasons-table td:nth-child(4), .reasons-table td:nth-child(5), .reasons-table td:nth-child(6){ text-align: right; }
 
   .header-actions{ display:flex; gap: 8px; }
   .icon-btn-text{
@@ -227,6 +227,8 @@
 
   <div id="tabReasons" class="tab-panel">
 
+    <div class="banner" id="reasonsWeekNote"></div>
+
     <div class="alerts" id="reasonAlerts"></div>
 
     <section>
@@ -247,7 +249,7 @@
       <h2>All contact reasons this week</h2>
       <div class="panel">
         <table class="reasons-table" id="reasonsTable">
-          <thead><tr><th>Category</th><th>Reason</th><th>Tickets</th><th>% of total</th><th>vs last week</th></tr></thead>
+          <thead><tr><th>Category</th><th>Reason</th><th>Tickets</th><th>% of total</th><th>vs last week</th><th>% change</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -731,13 +733,14 @@ function getContactReasonSnapshot(toIdx) {
     const trailingAvg = trailing.length ? trailing.reduce((a, b) => a + b.count, 0) / trailing.length : null;
     const hasHistory = idx > 0;
     const isNew = hasHistory && trailingAvg === 0 && count > 0;
-    const isSpike = !isNew && trailingAvg !== null && trailingAvg > 0 && count >= 3 && count >= trailingAvg * 1.5;
+    const isSpike = !isNew && trailingAvg !== null && trailingAvg > 0 && count >= 10 && count >= trailingAvg * 2;
+    const spikeRatio = (trailingAvg && trailingAvg > 0) ? count / trailingAvg : null;
     const { parent, child } = splitParentChild(value);
     return {
       value, parent, child, count, prevCount, trailingAvg,
       deltaAbs: prevCount === null ? null : count - prevCount,
       deltaPct: (prevCount === null || prevCount === 0) ? null : ((count - prevCount) / prevCount) * 100,
-      isNew, isSpike,
+      isNew, isSpike, spikeRatio,
     };
   }).filter(Boolean);
 
@@ -754,8 +757,8 @@ function getContactReasonSnapshot(toIdx) {
 
 function renderReasonAlerts(snapshot) {
   const el = document.getElementById('reasonAlerts');
-  const spikes = snapshot.filter(r => r.isSpike).sort((a, b) => b.count - a.count);
-  const news = snapshot.filter(r => r.isNew).sort((a, b) => b.count - a.count);
+  const spikes = snapshot.filter(r => r.isSpike).sort((a, b) => b.spikeRatio - a.spikeRatio).slice(0, 5);
+  const news = snapshot.filter(r => r.isNew).sort((a, b) => b.count - a.count).slice(0, 5);
 
   if (!spikes.length && !news.length) { el.innerHTML = ''; return; }
 
@@ -778,11 +781,14 @@ function renderMovers(snapshot) {
   const up = withDelta.filter(r => r.deltaAbs > 0).sort((a, b) => b.deltaAbs - a.deltaAbs).slice(0, 3);
   const down = withDelta.filter(r => r.deltaAbs < 0).sort((a, b) => a.deltaAbs - b.deltaAbs).slice(0, 3);
 
-  const rowHtml = (r, sign) => `
+  const rowHtml = (r, sign) => {
+    const pctText = r.deltaPct === null ? '' : ` (${sign > 0 ? '+' : ''}${r.deltaPct.toFixed(0)}%)`;
+    return `
     <div class="mover-row">
       <span class="name">${r.child}</span>
-      <span class="delta" style="color:${sign > 0 ? 'var(--rust)' : 'var(--green)'}">${sign > 0 ? '+' : ''}${r.deltaAbs} (${r.count} total)</span>
+      <span class="delta" style="color:${sign > 0 ? 'var(--rust)' : 'var(--green)'}">${sign > 0 ? '+' : ''}${r.deltaAbs}${pctText} — ${r.count} total</span>
     </div>`;
+  };
 
   document.getElementById('moversUp').innerHTML = up.length ? up.map(r => rowHtml(r, 1)).join('') : '<div class="mover-row"><span class="name">No increases</span></div>';
   document.getElementById('moversDown').innerHTML = down.length ? down.map(r => rowHtml(r, -1)).join('') : '<div class="mover-row"><span class="name">No decreases</span></div>';
@@ -793,6 +799,7 @@ function renderReasonsTable(snapshot) {
   const sorted = [...snapshot].sort((a, b) => b.count - a.count);
   tbody.innerHTML = sorted.map(r => {
     const deltaText = r.deltaAbs === null ? 'n/a' : `${r.deltaAbs > 0 ? '+' : ''}${r.deltaAbs}`;
+    const pctText = r.deltaPct === null ? 'n/a' : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct.toFixed(0)}%`;
     const deltaColor = r.deltaAbs === null ? 'var(--ink-soft)' : r.deltaAbs > 0 ? 'var(--rust)' : r.deltaAbs < 0 ? 'var(--green)' : 'var(--ink-soft)';
     return `<tr>
       <td>${r.parent}</td>
@@ -800,11 +807,19 @@ function renderReasonsTable(snapshot) {
       <td>${r.count}</td>
       <td>${r.pctOfTotal.toFixed(1)}%</td>
       <td style="color:${deltaColor}">${deltaText}</td>
+      <td style="color:${deltaColor}">${pctText}</td>
     </tr>`;
   }).join('');
 }
 
 function renderReasonInsights(fromIdx, toIdx) {
+  const toRow = teamRows[toIdx];
+  const prevRow = toIdx > 0 ? teamRows[toIdx - 1] : null;
+  const note = document.getElementById('reasonsWeekNote');
+  note.innerHTML = prevRow
+    ? `Alerts, movers, and the table below all compare <strong>Week ${toRow['ISO week']} · ${toRow['Week start (Monday)']}</strong> against <strong>Week ${prevRow['ISO week']}</strong> — always the "To" week vs the week right before it, regardless of what "From" is set to. Only the evolution chart at the bottom uses the full From–To range.`
+    : `Showing <strong>Week ${toRow['ISO week']} · ${toRow['Week start (Monday)']}</strong> — no earlier week available to compare against.`;
+
   const snapshot = getContactReasonSnapshot(toIdx);
   renderReasonAlerts(snapshot);
   renderMovers(snapshot);
