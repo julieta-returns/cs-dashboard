@@ -141,7 +141,23 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 999px; color: var(--ink-soft); cursor: pointer;
   }
 
+  .side-index{
+    position: fixed; top: 160px; left: max(16px, calc(50% - 620px)); width: 150px;
+    font-size: 12px; display:flex; flex-direction:column; gap: 9px; z-index: 40;
+  }
+  .side-index-title{ font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; font-size:11px; margin-bottom:2px; }
+  .side-index a{ color:var(--ink-soft); text-decoration:none; }
+  .side-index a:hover{ color:var(--ink); }
+  @media (max-width: 1400px){ .side-index{ display:none; } }
+
+  .floating-actions{ position: fixed; bottom: 24px; right: 24px; display:flex; flex-direction:column; gap: 8px; z-index: 50; }
+  .floating-btn{
+    font-family:'Inter',sans-serif; font-size: 12px; font-weight: 600; padding: 10px 16px; border-radius: 999px;
+    background: var(--accent); color: #fff; border: none; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.2);
+  }
+
   @media print {
+    .side-index, .floating-actions { display:none !important; }
     html[data-theme="dark"]{
       --bg:#F6F3EE; --panel:#fff; --ink:#211D1A; --ink-soft:#5B554C; --line:#E3DDD1;
     }
@@ -180,6 +196,21 @@
     </div>
   </header>
 
+  <nav class="side-index" id="sideIndex">
+    <div class="side-index-title">Jump to</div>
+    <a href="#" data-tab="overview" data-target="kpiRow">Scorecards</a>
+    <a href="#" data-tab="overview" data-target="trendsSection">Trends</a>
+    <a href="#" data-tab="overview" data-target="drivingSection">What's driving contact</a>
+    <a href="#" data-tab="reasons" data-target="moversSection">Movers &amp; alerts</a>
+    <a href="#" data-tab="reasons" data-target="reasonsTableSection">Reasons table</a>
+    <a href="#" data-tab="reasons" data-target="evolutionSection">Evolution chart</a>
+  </nav>
+
+  <div class="floating-actions">
+    <button id="resetFiltersBtn" class="floating-btn">Reset filters</button>
+    <button id="backToTopBtn" class="floating-btn">Back to top</button>
+  </div>
+
   <div class="tabs">
     <button class="tab-btn active" data-tab="overview">Overview</button>
     <button class="tab-btn" data-tab="reasons">Contact Reasons</button>
@@ -204,7 +235,7 @@
 
     <div class="banner" id="bestWorstBanner"></div>
 
-    <section>
+    <section id="trendsSection">
       <h2>Trends</h2>
       <div class="chart-grid">
         <div class="chart-box"><h3>CSAT (avg score)</h3><canvas id="csatChart"></canvas></div>
@@ -213,7 +244,7 @@
       </div>
     </section>
 
-    <section>
+    <section id="drivingSection">
       <h2>What's driving contact</h2>
       <div class="panel">
         <div class="field-toggle">
@@ -231,7 +262,7 @@
 
     <div class="alerts" id="reasonAlerts"></div>
 
-    <section>
+    <section id="moversSection">
       <h2>Biggest movers this week</h2>
       <div class="movers-grid">
         <div class="panel">
@@ -245,7 +276,7 @@
       </div>
     </section>
 
-    <section>
+    <section id="reasonsTableSection">
       <h2>All contact reasons this week</h2>
       <div class="panel">
         <table class="reasons-table" id="reasonsTable">
@@ -255,7 +286,7 @@
       </div>
     </section>
 
-    <section>
+    <section id="evolutionSection">
       <h2>Contact reason evolution</h2>
       <div class="panel">
         <div class="controls-row" style="justify-content: flex-start; margin-bottom: 18px;">
@@ -566,15 +597,13 @@ function renderTrendCharts(rows) {
   });
 }
 
-function renderFieldsChart(fieldName, fromWeek, toWeek) {
+function renderFieldsChart(fieldName, fromIso, toIso) {
   activeField = fieldName;
   const p = palette();
-  const fromDate = parseDMY(fromWeek);
-  const toDate = parseDMY(toWeek);
   const rows = fieldsRows.filter(r => {
     if (r['Field'] !== fieldName) return false;
-    const d = parseDMY(r['Week start (Monday)']);
-    return d >= fromDate && d <= toDate;
+    const iso = toNumber(r['ISO week']);
+    return iso >= fromIso && iso <= toIso;
   });
   if (!rows.length) return;
 
@@ -584,7 +613,7 @@ function renderFieldsChart(fieldName, fromWeek, toWeek) {
     .map(([value, count]) => ({ value, count }))
     .sort((a, b) => b.count - a.count);
 
-  const rangeSuffix = fromWeek === toWeek ? `week of ${toWeek}` : `${fromWeek} – ${toWeek}`;
+  const rangeSuffix = fromIso === toIso ? `week ${toIso}` : `weeks ${fromIso}–${toIso}`;
 
   destroyChart('fields');
   const canvas = document.getElementById('fieldsChart');
@@ -680,12 +709,12 @@ function renderReasonTrend() {
 
   const fromIdx = Number(document.getElementById('fromFilter').value);
   const toIdx = Number(document.getElementById('toFilter').value);
-  const fromDate = parseDMY(teamRows[fromIdx]['Week start (Monday)']);
-  const toDate = parseDMY(teamRows[toIdx]['Week start (Monday)']);
+  const fromIso = toNumber(teamRows[fromIdx]['ISO week']);
+  const toIso = toNumber(teamRows[toIdx]['ISO week']);
 
   const rows = fieldsRows
     .filter(r => r['Field'] === 'Contact Reason' && r['Value'] === reason)
-    .filter(r => { const d = parseDMY(r['Week start (Monday)']); return d >= fromDate && d <= toDate; })
+    .filter(r => { const iso = toNumber(r['ISO week']); return iso >= fromIso && iso <= toIso; })
     .sort((a, b) => parseDMY(a['Week start (Monday)']) - parseDMY(b['Week start (Monday)']));
 
   destroyChart('reasonTrend');
@@ -836,7 +865,7 @@ function renderAll() {
   renderKpis(fromIdx, toIdx);
   renderBestWorstBanner(range);
   renderTrendCharts(range);
-  renderFieldsChart(activeField, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
+  renderFieldsChart(activeField, toNumber(teamRows[fromIdx]['ISO week']), toNumber(teamRows[toIdx]['ISO week']));
   renderReasonInsights(fromIdx, toIdx);
   if (document.getElementById('reasonSelect').value) renderReasonTrend();
 }
@@ -923,12 +952,34 @@ document.querySelectorAll('.field-toggle button').forEach(btn => {
         btn.classList.add('active');
         const fromIdx = Number(document.getElementById('fromFilter').value);
         const toIdx = Number(document.getElementById('toFilter').value);
-        renderFieldsChart(btn.dataset.field, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
+        renderFieldsChart(btn.dataset.field, toNumber(teamRows[fromIdx]['ISO week']), toNumber(teamRows[toIdx]['ISO week']));
       });
     });
 
 document.getElementById('exportPdf').addEventListener('click', () => window.print());
 document.getElementById('exportCsv').addEventListener('click', exportCsv);
+
+document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+  document.getElementById('fromFilter').value = teamRows.length - 1;
+  document.getElementById('toFilter').value = teamRows.length - 1;
+  renderAll();
+});
+
+document.getElementById('backToTopBtn').addEventListener('click', () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+document.querySelectorAll('.side-index a').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    const tabBtn = document.querySelector(`.tab-btn[data-tab="${link.dataset.tab}"]`);
+    if (tabBtn && !tabBtn.classList.contains('active')) tabBtn.click();
+    requestAnimationFrame(() => {
+      const el = document.getElementById(link.dataset.target);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+});
 
 document.querySelector('.wrap').classList.add('loaded');
 
