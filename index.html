@@ -156,6 +156,17 @@
     </div>
   </section>
 
+  <section>
+    <h2>Contact reason evolution</h2>
+    <div class="panel">
+      <div class="controls-row" style="justify-content: flex-start; margin-bottom: 18px;">
+        <label class="range-label" for="reasonSelect">Reason</label>
+        <select id="reasonSelect"><option>Loading…</option></select>
+      </div>
+      <canvas id="reasonTrendChart" style="max-height: 320px;"></canvas>
+    </div>
+  </section>
+
 </div>
 
 <script>
@@ -448,6 +459,50 @@ function renderFieldsChart(fieldName, fromWeek, toWeek) {
   }
 }
 
+function populateReasonSelect() {
+  const select = document.getElementById('reasonSelect');
+  const totals = {};
+  fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
+    totals[r['Value']] = (totals[r['Value']] || 0) + (toNumber(r['Tickets']) || 0);
+  });
+  const sortedValues = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+  select.innerHTML = sortedValues.map(v => `<option value="${v.replace(/"/g, '&quot;')}">${v}</option>`).join('');
+  select.addEventListener('change', renderReasonTrend);
+}
+
+function renderReasonTrend() {
+  const select = document.getElementById('reasonSelect');
+  const reason = select.value;
+  const p = palette();
+
+  const fromIdx = Number(document.getElementById('fromFilter').value);
+  const toIdx = Number(document.getElementById('toFilter').value);
+  const fromDate = parseDMY(teamRows[fromIdx]['Week start (Monday)']);
+  const toDate = parseDMY(teamRows[toIdx]['Week start (Monday)']);
+
+  const rows = fieldsRows
+    .filter(r => r['Field'] === 'Contact Reason' && r['Value'] === reason)
+    .filter(r => { const d = parseDMY(r['Week start (Monday)']); return d >= fromDate && d <= toDate; })
+    .sort((a, b) => parseDMY(a['Week start (Monday)']) - parseDMY(b['Week start (Monday)']));
+
+  destroyChart('reasonTrend');
+  charts.reasonTrend = new Chart(document.getElementById('reasonTrendChart'), {
+    type: 'line',
+    data: {
+      labels: rows.map(r => r['Week start (Monday)']),
+      datasets: [{ label: reason, data: rows.map(r => toNumber(r['Tickets']) || 0), borderColor: p.accent, backgroundColor: p.accent, tension: 0.25, pointRadius: 2, fill: false }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft, precision: 0 } },
+        x: { grid: { display: false }, ticks: { ...thinTicks(), color: p.soft } },
+      },
+    },
+  });
+}
+
 function renderAll() {
   const fromSelect = document.getElementById('fromFilter');
   const toSelect = document.getElementById('toFilter');
@@ -458,6 +513,7 @@ function renderAll() {
   renderKpis(fromIdx, toIdx);
   renderTrendCharts(range);
   renderFieldsChart(activeField, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
+  if (document.getElementById('reasonSelect').value) renderReasonTrend();
 }
 
 function weekOptionLabel(r, i) {
@@ -523,6 +579,7 @@ async function init() {
       'Checked ' + new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
     populateWeekFilter();
+    populateReasonSelect();
     renderAll();
 
     document.querySelectorAll('.field-toggle button').forEach(btn => {
