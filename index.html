@@ -108,6 +108,8 @@
 </div>
 
 <script>
+try {
+
 // ---- CONFIG -----------------------------------------------------------
 const SHEET_ID = '1UBJHeKr7VFW4sr5kd-mZRsDsNtvGeWP6sF8WxmMiG_Q';
 const csvUrl = (sheetName) =>
@@ -139,10 +141,6 @@ function toNumber(v) {
 
 const palette = { accent: '#35473D', gold: '#AD8A52', rust: '#A85C43', soft: '#5B554C', line: '#E3DDD1' };
 
-Chart.defaults.font.family = "'Inter', sans-serif";
-Chart.defaults.color = palette.soft;
-Chart.defaults.borderColor = palette.line;
-
 function lineChart(ctx, labels, datasets) {
   return new Chart(ctx, {
     type: 'line',
@@ -161,6 +159,13 @@ let fieldsData = [];
 let fieldsChart;
 
 async function init() {
+  if (typeof Chart === 'undefined') throw new Error('Chart.js did not load (CDN script blocked or too slow).');
+  if (typeof Papa === 'undefined') throw new Error('PapaParse did not load (CDN script blocked or too slow).');
+
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.color = palette.soft;
+  Chart.defaults.borderColor = palette.line;
+
   try {
     const [team, fields] = await Promise.all([
       fetchTab('Team performance'),
@@ -260,6 +265,12 @@ document.querySelectorAll('.field-toggle button').forEach(btn => {
 });
 
 init();
+
+} catch (fatalErr) {
+  document.querySelector('.wrap').insertAdjacentHTML('beforeend',
+    `<div class="error">Something broke before the dashboard could even start: ${fatalErr.message}</div>`);
+  console.error(fatalErr);
+}
 </script>
 </body>
 </html>
