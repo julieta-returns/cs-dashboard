@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -679,7 +679,7 @@ function populateWeekFilter() {
 
   fromSelect.innerHTML = optionsHtml;
   toSelect.innerHTML = optionsHtml;
-  fromSelect.value = 0;
+  fromSelect.value = teamRows.length - 1;
   toSelect.value = teamRows.length - 1;
 
   fromSelect.addEventListener('change', () => {
@@ -712,8 +712,8 @@ document.getElementById('themeToggle').addEventListener('click', () => {
 // ---- MAIN ---------------------------------------------------------------
 async function init() {
   try {
-    let savedTheme = 'light';
-    try { savedTheme = localStorage.getItem('ekster-cs-theme') || 'light'; } catch (e) {}
+    let savedTheme = 'dark';
+    try { savedTheme = localStorage.getItem('ekster-cs-theme') || 'dark'; } catch (e) {}
     applyTheme(savedTheme);
 
     const [team, fields] = await Promise.all([
