@@ -397,7 +397,6 @@ function renderKpis(fromIdx, toIdx) {
       <div class="label">${cfg.label}${suffix}</div>
       <div class="value-row"><span class="value" id="value-${cfg.key}">0</span>${cfg.unit ? `<span class="unit">${cfg.unit}</span>` : ''}</div>
       <div id="wow-${cfg.key}"></div>
-      <canvas class="sparkline" id="spark-${cfg.key}"></canvas>
     </div>`;
   }).join('');
 
@@ -418,10 +417,6 @@ function renderKpis(fromIdx, toIdx) {
       animateValue(valueEl, from, displayCurr, cfg.decimals);
     }
     prevDisplayedValues[cfg.key] = displayCurr ?? 0;
-
-    const series = range.map(r => toNumber(r[cfg.metricKey])).map(v => v === null ? 0 : v);
-    const sparkColor = cls === 'good' ? p.green : cls === 'bad' ? p.rust : p.accent;
-    renderSparkline(`spark-${cfg.key}`, series, sparkColor);
   });
 }
 
