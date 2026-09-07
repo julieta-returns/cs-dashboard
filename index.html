@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ekster CS — Team Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --bg: #F6F3EE;
+    --panel: #FFFFFF;
+    --ink: #211D1A;
+    --ink-soft: #5B554C;
+    --line: #E3DDD1;
+    --accent: #35473D;
+    --accent-soft: #E7EDE7;
+    --gold: #AD8A52;
+    --rust: #A85C43;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap{ max-width: 1080px; margin: 0 auto; padding: 48px 24px 96px; }
+  header{ display:flex; justify-content:space-between; align-items:flex-end; gap: 24px; margin-bottom: 40px; border-bottom: 1px solid var(--line); padding-bottom: 24px; }
+  h1{
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 34px; line-height: 1.1;
+    margin: 0 0 6px;
+  }
+  header p{ margin:0; color: var(--ink-soft); font-size: 14px; }
+  #updated{ font-size: 13px; color: var(--ink-soft); text-align: right; }
+
+  .kpi-row{ display:grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 40px; }
+  .kpi{ background: var(--panel); padding: 20px 22px; }
+  .kpi .label{ font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+  .kpi .value{ font-family: 'Fraunces', serif; font-size: 30px; font-weight: 600; }
+  .kpi .sub{ font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+
+  section{ margin-bottom: 48px; }
+  h2{ font-family: 'Fraunces', serif; font-weight: 600; font-size: 20px; margin: 0 0 18px; }
+
+  .panel{ background: var(--panel); border: 1px solid var(--line); padding: 24px; }
+  .chart-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .chart-box{ background: var(--panel); border: 1px solid var(--line); padding: 20px; }
+  .chart-box h3{ font-size: 14px; font-weight: 500; color: var(--ink-soft); margin: 0 0 12px; }
+  canvas{ max-height: 260px; }
+
+  .field-toggle{ display:flex; gap: 8px; margin-bottom: 18px; }
+  .field-toggle button{
+    font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 16px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .field-toggle button.active{ background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .empty, .error{ color: var(--ink-soft); font-size: 14px; padding: 40px 0; text-align:center; }
+  .error{ color: var(--rust); }
+
+  @media (max-width: 720px){
+    .kpi-row{ grid-template-columns: repeat(2, 1fr); }
+    .chart-grid{ grid-template-columns: 1fr; }
+    header{ flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Ekster CS — Team Dashboard</h1>
+      <p>Weekly support performance, sourced straight from the team's tracking sheet.</p>
+    </div>
+    <div id="updated">Loading…</div>
+  </header>
+
+  <div class="kpi-row" id="kpiRow">
+    <div class="kpi"><div class="label">CSAT</div><div class="value">—</div></div>
+    <div class="kpi"><div class="label">Resolution time</div><div class="value">—</div></div>
+    <div class="kpi"><div class="label">Human response time</div><div class="value">—</div></div>
+    <div class="kpi"><div class="label">Tickets created</div><div class="value">—</div></div>
+  </div>
+
+  <section>
+    <h2>Trends</h2>
+    <div class="chart-grid">
+      <div class="chart-box"><h3>CSAT (avg score)</h3><canvas id="csatChart"></canvas></div>
+      <div class="chart-box"><h3>Resolution &amp; response time (hrs)</h3><canvas id="timeChart"></canvas></div>
+      <div class="chart-box" style="grid-column: 1 / -1;"><h3>Ticket volume</h3><canvas id="volumeChart"></canvas></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What's driving contact</h2>
+    <div class="panel">
+      <div class="field-toggle">
+        <button data-field="Contact Reason" class="active">Contact Reason</button>
+        <button data-field="Retention Offer">Retention Offer</button>
+      </div>
+      <canvas id="fieldsChart" style="max-height: 420px;"></canvas>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// ---- CONFIG -----------------------------------------------------------
+const SHEET_ID = '1UBJHeKr7VFW4sr5kd-mZRsDsNtvGeWP6sF8WxmMiG_Q';
+const csvUrl = (sheetName) =>
+  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+
+// ---- HELPERS ------------------------------------------------------------
+function parseCsv(text) {
+  return new Promise((resolve) => {
+    Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (res) => resolve(res.data),
+    });
+  });
+}
+
+async function fetchTab(sheetName) {
+  const res = await fetch(csvUrl(sheetName));
+  if (!res.ok) throw new Error(`Could not load "${sheetName}" (HTTP ${res.status})`);
+  const text = await res.text();
+  return parseCsv(text);
+}
+
+function toNumber(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(String(v).replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+const palette = { accent: '#35473D', gold: '#AD8A52', rust: '#A85C43', soft: '#5B554C', line: '#E3DDD1' };
+
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.color = palette.soft;
+Chart.defaults.borderColor = palette.line;
+
+function lineChart(ctx, labels, datasets) {
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: datasets.length > 1, position: 'top', align: 'end', labels: { boxWidth: 10, usePointStyle: true } } },
+      scales: { y: { beginAtZero: true, grid: { color: palette.line } }, x: { grid: { display: false } } },
+      elements: { point: { radius: 2 }, line: { tension: 0.25 } },
+    },
+  });
+}
+
+// ---- MAIN ---------------------------------------------------------------
+let fieldsData = [];
+let fieldsChart;
+
+async function init() {
+  try {
+    const [team, fields] = await Promise.all([
+      fetchTab('Team performance'),
+      fetchTab('Ticket fields'),
+    ]);
+
+    if (!team.length) throw new Error('The "Team performance" tab came back empty.');
+
+    document.getElementById('updated').textContent =
+      'Checked ' + new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
+    const labels = team.map(r => r['Week start (Monday)']);
+    const csat = team.map(r => toNumber(r['CSAT (avg score)']));
+    const resTime = team.map(r => toNumber(r['Resolution time (hrs)']));
+    const humanRt = team.map(r => toNumber(r['Human response time (hrs)']));
+    const created = team.map(r => toNumber(r['Tickets created']));
+    const closed = team.map(r => toNumber(r['Tickets closed']));
+    const open_ = team.map(r => toNumber(r['Open tickets']));
+
+    const latest = team[team.length - 1];
+    const kpiRow = document.getElementById('kpiRow');
+    kpiRow.innerHTML = `
+      <div class="kpi"><div class="label">CSAT (last week)</div><div class="value">${latest['CSAT (avg score)'] ?? '—'}</div></div>
+      <div class="kpi"><div class="label">Resolution time</div><div class="value">${latest['Resolution time (hrs)'] ?? '—'}<span style="font-size:14px;"> hrs</span></div></div>
+      <div class="kpi"><div class="label">Human response time</div><div class="value">${latest['Human response time (hrs)'] ?? '—'}<span style="font-size:14px;"> hrs</span></div></div>
+      <div class="kpi"><div class="label">Open tickets</div><div class="value">${latest['Open tickets'] ?? '—'}</div><div class="sub">as of ${latest['Week start (Monday)'] ?? ''}</div></div>
+    `;
+
+    lineChart(document.getElementById('csatChart'), labels, [
+      { label: 'CSAT', data: csat, borderColor: palette.accent, backgroundColor: palette.accent },
+    ]);
+
+    lineChart(document.getElementById('timeChart'), labels, [
+      { label: 'Resolution time', data: resTime, borderColor: palette.gold, backgroundColor: palette.gold },
+      { label: 'Human response time', data: humanRt, borderColor: palette.accent, backgroundColor: palette.accent },
+    ]);
+
+    new Chart(document.getElementById('volumeChart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Created', data: created, backgroundColor: palette.accent },
+          { label: 'Closed', data: closed, backgroundColor: palette.gold },
+          { label: 'Open (end of week)', data: open_, backgroundColor: palette.rust },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'top', align: 'end', labels: { boxWidth: 10, usePointStyle: true } } },
+        scales: { y: { beginAtZero: true, grid: { color: palette.line } }, x: { grid: { display: false } } },
+      },
+    });
+
+    fieldsData = fields;
+    renderFieldsChart('Contact Reason');
+
+  } catch (err) {
+    document.querySelector('.wrap').insertAdjacentHTML('beforeend',
+      `<div class="error">Couldn't load the dashboard data: ${err.message}. Make sure the sheet is shared as "Anyone with the link can view".</div>`);
+    console.error(err);
+  }
+}
+
+function renderFieldsChart(fieldName) {
+  const rows = fieldsData.filter(r => r['Field'] === fieldName);
+  if (!rows.length) return;
+
+  const latestWeek = rows.reduce((max, r) => r['Week start (Monday)'] > max ? r['Week start (Monday)'] : max, rows[0]['Week start (Monday)']);
+  const latestRows = rows.filter(r => r['Week start (Monday)'] === latestWeek)
+    .map(r => ({ value: r['Value'], count: toNumber(r['Tickets']) || 0 }))
+    .sort((a, b) => b.count - a.count);
+
+  const ctx = document.getElementById('fieldsChart');
+  if (fieldsChart) fieldsChart.destroy();
+  fieldsChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: latestRows.map(r => r.value),
+      datasets: [{ label: `Tickets (week of ${latestWeek})`, data: latestRows.map(r => r.count), backgroundColor: palette.accent }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, grid: { color: palette.line } }, y: { grid: { display: false } } },
+    },
+  });
+}
+
+document.querySelectorAll('.field-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.field-toggle button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderFieldsChart(btn.dataset.field);
+  });
+});
+
+init();
+</script>
+</body>
+</html>
