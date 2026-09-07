@@ -177,6 +177,8 @@
       <h2>Contact reason evolution</h2>
       <div class="panel">
         <div class="controls-row" style="justify-content: flex-start; margin-bottom: 18px;">
+          <label class="range-label" for="categorySelect">Category</label>
+          <select id="categorySelect"><option>Loading…</option></select>
           <label class="range-label" for="reasonSelect">Reason</label>
           <select id="reasonSelect"><option>Loading…</option></select>
         </div>
@@ -477,15 +479,50 @@ function renderFieldsChart(fieldName, fromWeek, toWeek) {
   }
 }
 
+function splitParentChild(value) {
+  const idx = value.indexOf('::');
+  if (idx === -1) return { parent: value, child: value };
+  return { parent: value.slice(0, idx), child: value.slice(idx + 2) };
+}
+
+let reasonHierarchy = {}; // parent -> [{ value, child, count }], sorted by count desc
+
 function populateReasonSelect() {
-  const select = document.getElementById('reasonSelect');
   const totals = {};
   fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
     totals[r['Value']] = (totals[r['Value']] || 0) + (toNumber(r['Tickets']) || 0);
   });
-  const sortedValues = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
-  select.innerHTML = sortedValues.map(v => `<option value="${v.replace(/"/g, '&quot;')}">${v}</option>`).join('');
-  select.addEventListener('change', renderReasonTrend);
+
+  reasonHierarchy = {};
+  Object.entries(totals).forEach(([value, count]) => {
+    const { parent, child } = splitParentChild(value);
+    if (!reasonHierarchy[parent]) reasonHierarchy[parent] = [];
+    reasonHierarchy[parent].push({ value, child, count });
+  });
+  Object.values(reasonHierarchy).forEach(list => list.sort((a, b) => b.count - a.count));
+
+  const parentTotals = Object.entries(reasonHierarchy).map(([parent, list]) => ({
+    parent, total: list.reduce((sum, r) => sum + r.count, 0),
+  })).sort((a, b) => b.total - a.total);
+
+  const categorySelect = document.getElementById('categorySelect');
+  categorySelect.innerHTML = parentTotals.map(p => `<option value="${p.parent.replace(/"/g, '&quot;')}">${p.parent}</option>`).join('');
+  categorySelect.value = parentTotals[0].parent;
+
+  populateChildSelect(categorySelect.value);
+
+  categorySelect.addEventListener('change', () => {
+    populateChildSelect(categorySelect.value);
+    renderReasonTrend();
+  });
+}
+
+function populateChildSelect(parent) {
+  const reasonSelect = document.getElementById('reasonSelect');
+  const children = reasonHierarchy[parent] || [];
+  reasonSelect.innerHTML = children.map(c => `<option value="${c.value.replace(/"/g, '&quot;')}">${c.child}</option>`).join('');
+  if (children.length) reasonSelect.value = children[0].value;
+  reasonSelect.onchange = renderReasonTrend;
 }
 
 function renderReasonTrend() {
