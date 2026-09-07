@@ -68,10 +68,10 @@
   .kpi .value-row{ display:flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .kpi .value{ font-family: 'Space Grotesk', sans-serif; font-size: 27px; font-weight: 700; }
   .kpi .unit{ font-size: 13px; color: var(--ink-soft); }
-  .kpi .wow{ font-size: 12px; font-weight: 600; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
-  .kpi .wow.good{ color: var(--green); background: color-mix(in srgb, var(--green) 15%, transparent); }
-  .kpi .wow.bad{ color: var(--rust); background: color-mix(in srgb, var(--rust) 15%, transparent); }
-  .kpi .wow.flat{ color: var(--ink-soft); background: color-mix(in srgb, var(--ink-soft) 12%, transparent); }
+  .kpi .wow{ font-size: 12px; font-weight: 600; margin-top: 4px; }
+  .kpi .wow.good{ color: var(--green); }
+  .kpi .wow.bad{ color: var(--rust); }
+  .kpi .wow.flat{ color: var(--ink-soft); font-weight: 400; }
   .kpi .sub{ font-size: 12px; color: var(--ink-soft); margin-top: 6px; }
 
   section{ margin-bottom: 44px; }
@@ -211,13 +211,20 @@ function palette() {
   const v = (name) => styles.getPropertyValue(name).trim();
   return {
     accent: v('--accent'), gold: v('--gold'), rust: v('--rust'),
-    soft: v('--ink-soft'), line: v('--line'), ink: v('--ink'),
+    soft: v('--ink-soft'), line: v('--line'), ink: v('--ink'), panel: v('--panel'),
   };
+}
+
+function parseDMY(str) {
+  if (!str) return null;
+  const [d, m, y] = str.split('/').map(Number);
+  if (!d || !m || !y) return null;
+  return new Date(y, m - 1, d);
 }
 
 function wowBadge(curr, prev, higherIsBetter) {
   if (curr === null || curr === undefined || prev === null || prev === undefined || prev === 0) {
-    return '<span class="wow flat">n/a</span>';
+    return '<div class="wow flat">n/a vs last week</div>';
   }
   const pct = ((curr - prev) / Math.abs(prev)) * 100;
   const rounded = Math.round(pct * 10) / 10;
@@ -227,7 +234,7 @@ function wowBadge(curr, prev, higherIsBetter) {
     const isGood = higherIsBetter ? curr > prev : curr < prev;
     cls = isGood ? 'good' : 'bad';
   }
-  return `<span class="wow ${cls}">${arrow} ${Math.abs(rounded)}%</span>`;
+  return `<div class="wow ${cls}">${arrow} ${Math.abs(rounded)}% vs last week</div>`;
 }
 
 // ---- STATE ---------------------------------------------------------------
@@ -253,32 +260,23 @@ function renderKpis(rows, idx) {
   kpiRow.innerHTML = `
     <div class="kpi">
       <div class="label">CSAT</div>
-      <div class="value-row">
-        <span class="value">${curr['CSAT (avg score)'] ?? '—'}</span>
-        ${wowBadge(num(curr,'CSAT (avg score)'), num(prev,'CSAT (avg score)'), true)}
-      </div>
+      <div class="value-row"><span class="value">${curr['CSAT (avg score)'] ?? '—'}</span></div>
+      ${wowBadge(num(curr,'CSAT (avg score)'), num(prev,'CSAT (avg score)'), true)}
     </div>
     <div class="kpi">
       <div class="label">Resolution time</div>
-      <div class="value-row">
-        <span class="value">${curr['Resolution time (hrs)'] ?? '—'}</span><span class="unit">hrs</span>
-        ${wowBadge(num(curr,'Resolution time (hrs)'), num(prev,'Resolution time (hrs)'), false)}
-      </div>
+      <div class="value-row"><span class="value">${curr['Resolution time (hrs)'] ?? '—'}</span><span class="unit">hrs</span></div>
+      ${wowBadge(num(curr,'Resolution time (hrs)'), num(prev,'Resolution time (hrs)'), false)}
     </div>
     <div class="kpi">
       <div class="label">Human response time</div>
-      <div class="value-row">
-        <span class="value">${curr['Human response time (hrs)'] ?? '—'}</span><span class="unit">hrs</span>
-        ${wowBadge(num(curr,'Human response time (hrs)'), num(prev,'Human response time (hrs)'), false)}
-      </div>
+      <div class="value-row"><span class="value">${curr['Human response time (hrs)'] ?? '—'}</span><span class="unit">hrs</span></div>
+      ${wowBadge(num(curr,'Human response time (hrs)'), num(prev,'Human response time (hrs)'), false)}
     </div>
     <div class="kpi">
       <div class="label">Open tickets</div>
-      <div class="value-row">
-        <span class="value">${curr['Open tickets'] ?? '—'}</span>
-        ${wowBadge(num(curr,'Open tickets'), num(prev,'Open tickets'), false)}
-      </div>
-      <div class="sub">as of ${curr['Week start (Monday)'] ?? ''}</div>
+      <div class="value-row"><span class="value">${curr['Open tickets'] ?? '—'}</span></div>
+      ${wowBadge(num(curr,'Open tickets'), num(prev,'Open tickets'), false)}
     </div>
   `;
 }
@@ -346,31 +344,54 @@ function renderTrendCharts(rows) {
 function renderFieldsChart(fieldName, uptoWeek) {
   activeField = fieldName;
   const p = palette();
-  const rows = fieldsRows.filter(r => r['Field'] === fieldName && r['Week start (Monday)'] <= uptoWeek);
+  const uptoDate = parseDMY(uptoWeek);
+  const rows = fieldsRows.filter(r => r['Field'] === fieldName && parseDMY(r['Week start (Monday)']) <= uptoDate);
   if (!rows.length) return;
 
-  const latestWeek = rows.reduce((max, r) => r['Week start (Monday)'] > max ? r['Week start (Monday)'] : max, rows[0]['Week start (Monday)']);
+  const latestWeek = rows.reduce((max, r) => parseDMY(r['Week start (Monday)']) > parseDMY(max) ? r['Week start (Monday)'] : max, rows[0]['Week start (Monday)']);
   const latestRows = rows.filter(r => r['Week start (Monday)'] === latestWeek)
     .map(r => ({ value: r['Value'], count: toNumber(r['Tickets']) || 0 }))
     .sort((a, b) => b.count - a.count);
 
   destroyChart('fields');
-  charts.fields = new Chart(document.getElementById('fieldsChart'), {
-    type: 'bar',
-    data: {
-      labels: latestRows.map(r => r.value),
-      datasets: [{ label: `Tickets (week of ${latestWeek})`, data: latestRows.map(r => r.count), backgroundColor: p.accent }],
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft } },
-        y: { grid: { display: false }, ticks: { color: p.soft } },
+  const canvas = document.getElementById('fieldsChart');
+
+  if (fieldName === 'Retention Offer') {
+    // A donut reads better here than a bar for a small set of outcome
+    // categories — it's about the mix, not comparing 38 long labels.
+    const qualitative = [p.accent, p.gold, p.rust, '#6B7FA3', '#8B5FBF', '#4F8FA3', '#C97B84', '#9AA65C'];
+    charts.fields = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: latestRows.map(r => r.value),
+        datasets: [{ data: latestRows.map(r => r.count), backgroundColor: latestRows.map((_, i) => qualitative[i % qualitative.length]), borderColor: p.panel || '#fff', borderWidth: 2 }],
       },
-    },
-  });
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right', labels: { color: p.soft, boxWidth: 12, usePointStyle: true } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed} tickets` } },
+        },
+      },
+    });
+  } else {
+    charts.fields = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: latestRows.map(r => r.value),
+        datasets: [{ label: `Tickets (week of ${latestWeek})`, data: latestRows.map(r => r.count), backgroundColor: p.accent }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft } },
+          y: { grid: { display: false }, ticks: { color: p.soft } },
+        },
+      },
+    });
+  }
 }
 
 function renderAll() {
@@ -385,9 +406,11 @@ function renderAll() {
 
 function populateWeekFilter() {
   const select = document.getElementById('weekFilter');
-  select.innerHTML = teamRows.map((r, i) =>
-    `<option value="${i}">${r['Week start (Monday)']}${i === teamRows.length - 1 ? ' (latest)' : ''}</option>`
-  ).join('');
+  select.innerHTML = teamRows.map((r, i) => {
+    const dateNoYear = (r['Week start (Monday)'] || '').split('/').slice(0, 2).join('/');
+    const label = `Week ${r['ISO week']} · ${dateNoYear}`;
+    return `<option value="${i}">${label}${i === teamRows.length - 1 ? ' (latest)' : ''}</option>`;
+  }).join('');
   select.value = teamRows.length - 1;
   select.addEventListener('change', renderAll);
 }
