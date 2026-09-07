@@ -36,7 +36,8 @@
     -webkit-font-smoothing: antialiased;
     transition: background .2s ease, color .2s ease;
   }
-  .wrap{ max-width: 1080px; margin: 0 auto; padding: 40px 24px 96px; }
+  .wrap{ max-width: 1080px; margin: 0 auto; padding: 40px 24px 96px; opacity: 0; transition: opacity .5s ease; }
+  .wrap.loaded{ opacity: 1; }
   header{ display:flex; justify-content:space-between; align-items:flex-end; gap: 24px; margin-bottom: 36px; border-bottom: 1px solid var(--line); padding-bottom: 22px; }
   .brand{ display:flex; align-items:center; gap: 14px; }
   .brand img{ height: 30px; width: auto; display:block; }
@@ -73,7 +74,11 @@
   }
 
   .kpi-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 36px; }
-  .kpi{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display:flex; flex-direction:column; justify-content: center; min-height: 84px; }
+  .kpi{ background: var(--panel); border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px; padding: 14px 16px; display:flex; flex-direction:column; justify-content: center; min-height: 84px; }
+  .kpi.good{ border-left-color: var(--green); }
+  .kpi.bad{ border-left-color: var(--rust); }
+  .kpi.flat{ border-left-color: var(--line); }
+  .kpi .sparkline{ width: 100%; height: 26px; margin-top: 6px; display: block; }
   .kpi .label{ font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
   .kpi .value-row{ display:flex; align-items: baseline; gap: 6px; flex-wrap: nowrap; }
   .kpi .value{ font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; }
@@ -103,6 +108,24 @@
   .empty, .error{ color: var(--ink-soft); font-size: 14px; padding: 32px 0; text-align:center; }
   .error{ color: var(--rust); }
 
+  .banner{ font-size: 13px; color: var(--ink-soft); margin: -8px 0 24px; }
+  .banner strong{ color: var(--ink); }
+
+  .header-actions{ display:flex; gap: 8px; }
+  .icon-btn-text{
+    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; padding: 0 12px; height: 36px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px; color: var(--ink-soft); cursor: pointer;
+  }
+
+  @media print {
+    html[data-theme="dark"]{
+      --bg:#F6F3EE; --panel:#fff; --ink:#211D1A; --ink-soft:#5B554C; --line:#E3DDD1;
+    }
+    .tabs, .controls-row, #themeToggle, .header-actions, .field-toggle { display:none !important; }
+    body{ background:#fff; }
+    .kpi, .chart-box, .panel{ break-inside: avoid; }
+  }
+
   @media (max-width: 720px){
     .kpi-row{ grid-template-columns: repeat(2, 1fr); }
     .chart-grid{ grid-template-columns: 1fr; }
@@ -125,6 +148,10 @@
     </div>
     <div class="header-right">
       <div id="updated">Loading…</div>
+      <div class="header-actions">
+        <button id="exportPdf" class="icon-btn-text" title="Export as PDF">Export PDF</button>
+        <button id="exportCsv" class="icon-btn-text" title="Export as CSV">Export CSV</button>
+      </div>
       <button id="themeToggle" title="Toggle theme" aria-label="Toggle light/dark theme"></button>
     </div>
   </header>
@@ -150,6 +177,8 @@
       <div class="kpi"><div class="label">Tickets created</div><div class="value-row"><span class="value">—</span></div></div>
       <div class="kpi"><div class="label">Tickets closed</div><div class="value-row"><span class="value">—</span></div></div>
     </div>
+
+    <div class="banner" id="bestWorstBanner"></div>
 
     <section>
       <h2>Trends</h2>
@@ -247,7 +276,7 @@ function palette() {
   const styles = getComputedStyle(document.documentElement);
   const v = (name) => styles.getPropertyValue(name).trim();
   return {
-    accent: v('--accent'), gold: v('--gold'), rust: v('--rust'),
+    accent: v('--accent'), gold: v('--gold'), rust: v('--rust'), green: v('--green'),
     soft: v('--ink-soft'), line: v('--line'), ink: v('--ink'), panel: v('--panel'),
   };
 }
@@ -301,61 +330,132 @@ function sumMetric(range, key) {
 }
 function round1(n) { return n === null ? null : Math.round(n * 10) / 10; }
 
+function directionClass(curr, prev, higherIsBetter) {
+  if (curr === null || curr === undefined || prev === null || prev === undefined || higherIsBetter === null || curr === prev) return 'flat';
+  const isGood = higherIsBetter ? curr > prev : curr < prev;
+  return isGood ? 'good' : 'bad';
+}
+
+function animateValue(el, from, to, decimals) {
+  const duration = 500;
+  const start = performance.now();
+  function step(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = from + (to - from) * eased;
+    el.textContent = decimals ? current.toFixed(decimals) : Math.round(current).toLocaleString('en-US');
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function renderSparkline(canvasId, series, color) {
+  destroyChart(canvasId);
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  charts[canvasId] = new Chart(canvas, {
+    type: 'line',
+    data: { labels: series.map((_, i) => i), datasets: [{ data: series, borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  });
+}
+
+const KPI_CONFIGS = [
+  { key: 'csat', label: 'CSAT', metricKey: 'CSAT (avg score)', unit: '', decimals: 1, higherIsBetter: true, agg: 'avg' },
+  { key: 'res', label: 'Resolution time', metricKey: 'Resolution time (hrs)', unit: 'hrs', decimals: 1, higherIsBetter: false, agg: 'avg' },
+  { key: 'rt', label: 'Human response time', metricKey: 'Human response time (hrs)', unit: 'hrs', decimals: 1, higherIsBetter: false, agg: 'avg' },
+  { key: 'open', label: 'Open tickets', metricKey: 'Open tickets', unit: '', decimals: 0, higherIsBetter: false, agg: 'last' },
+  { key: 'created', label: 'Tickets created', metricKey: 'Tickets created', unit: '', decimals: 0, higherIsBetter: null, agg: 'sum' },
+  { key: 'closed', label: 'Tickets closed', metricKey: 'Tickets closed', unit: '', decimals: 0, higherIsBetter: null, agg: 'sum' },
+];
+let prevDisplayedValues = {};
+
+function aggregate(range, key, mode) {
+  if (mode === 'avg') return avgMetric(range, key);
+  if (mode === 'sum') return sumMetric(range, key);
+  if (mode === 'last') return toNumber(range[range.length - 1][key]);
+  return null;
+}
+
 function renderKpis(fromIdx, toIdx) {
   const range = teamRows.slice(fromIdx, toIdx + 1);
   const rangeLen = range.length;
   const prevStart = fromIdx - rangeLen;
   const prevRange = prevStart >= 0 ? teamRows.slice(prevStart, fromIdx) : [];
   const periodLabel = rangeLen === 1 ? 'vs last week' : `vs previous ${rangeLen} weeks`;
-
-  const wow = (curr, prev, higherIsBetter) => wowBadge(curr, prev, higherIsBetter, periodLabel);
-
-  const csat = round1(avgMetric(range, 'CSAT (avg score)'));
-  const csatPrev = prevRange.length ? avgMetric(prevRange, 'CSAT (avg score)') : null;
-  const res = round1(avgMetric(range, 'Resolution time (hrs)'));
-  const resPrev = prevRange.length ? avgMetric(prevRange, 'Resolution time (hrs)') : null;
-  const rt = round1(avgMetric(range, 'Human response time (hrs)'));
-  const rtPrev = prevRange.length ? avgMetric(prevRange, 'Human response time (hrs)') : null;
-  const open_ = toNumber(range[range.length - 1]['Open tickets']);
-  const openPrev = prevRange.length ? toNumber(prevRange[prevRange.length - 1]['Open tickets']) : null;
-  const created = sumMetric(range, 'Tickets created');
-  const createdPrev = prevRange.length ? sumMetric(prevRange, 'Tickets created') : null;
-  const closed = sumMetric(range, 'Tickets closed');
-  const closedPrev = prevRange.length ? sumMetric(prevRange, 'Tickets closed') : null;
+  const p = palette();
 
   const kpiRow = document.getElementById('kpiRow');
-  kpiRow.innerHTML = `
-    <div class="kpi">
-      <div class="label">CSAT${rangeLen > 1 ? ' (avg)' : ''}</div>
-      <div class="value-row"><span class="value">${csat ?? '—'}</span></div>
-      ${wow(csat, csatPrev, true)}
-    </div>
-    <div class="kpi">
-      <div class="label">Resolution time${rangeLen > 1 ? ' (avg)' : ''}</div>
-      <div class="value-row"><span class="value">${res ?? '—'}</span><span class="unit">hrs</span></div>
-      ${wow(res, resPrev, false)}
-    </div>
-    <div class="kpi">
-      <div class="label">Human response time${rangeLen > 1 ? ' (avg)' : ''}</div>
-      <div class="value-row"><span class="value">${rt ?? '—'}</span><span class="unit">hrs</span></div>
-      ${wow(rt, rtPrev, false)}
-    </div>
-    <div class="kpi">
-      <div class="label">Open tickets${rangeLen > 1 ? ' (end of range)' : ''}</div>
-      <div class="value-row"><span class="value">${open_ ?? '—'}</span></div>
-      ${wow(open_, openPrev, false)}
-    </div>
-    <div class="kpi">
-      <div class="label">Tickets created${rangeLen > 1 ? ' (total)' : ''}</div>
-      <div class="value-row"><span class="value">${created ?? '—'}</span></div>
-      ${wow(created, createdPrev, null)}
-    </div>
-    <div class="kpi">
-      <div class="label">Tickets closed${rangeLen > 1 ? ' (total)' : ''}</div>
-      <div class="value-row"><span class="value">${closed ?? '—'}</span></div>
-      ${wow(closed, closedPrev, null)}
-    </div>
-  `;
+  kpiRow.innerHTML = KPI_CONFIGS.map(cfg => {
+    const suffix = rangeLen > 1 ? (cfg.agg === 'avg' ? ' (avg)' : cfg.agg === 'sum' ? ' (total)' : ' (end of range)') : '';
+    return `
+    <div class="kpi" id="kpi-${cfg.key}">
+      <div class="label">${cfg.label}${suffix}</div>
+      <div class="value-row"><span class="value" id="value-${cfg.key}">0</span>${cfg.unit ? `<span class="unit">${cfg.unit}</span>` : ''}</div>
+      <div id="wow-${cfg.key}"></div>
+      <canvas class="sparkline" id="spark-${cfg.key}"></canvas>
+    </div>`;
+  }).join('');
+
+  KPI_CONFIGS.forEach(cfg => {
+    const curr = aggregate(range, cfg.metricKey, cfg.agg);
+    const prev = prevRange.length ? aggregate(prevRange, cfg.metricKey, cfg.agg) : null;
+    const displayCurr = curr === null ? null : (cfg.decimals ? round1(curr) : Math.round(curr));
+
+    const cls = directionClass(curr, prev, cfg.higherIsBetter);
+    document.getElementById(`kpi-${cfg.key}`).classList.add(cls);
+    document.getElementById(`wow-${cfg.key}`).innerHTML = wowBadge(curr, prev, cfg.higherIsBetter, periodLabel);
+
+    const valueEl = document.getElementById(`value-${cfg.key}`);
+    if (displayCurr === null) {
+      valueEl.textContent = '—';
+    } else {
+      const from = prevDisplayedValues.hasOwnProperty(cfg.key) ? prevDisplayedValues[cfg.key] : 0;
+      animateValue(valueEl, from, displayCurr, cfg.decimals);
+    }
+    prevDisplayedValues[cfg.key] = displayCurr ?? 0;
+
+    const series = range.map(r => toNumber(r[cfg.metricKey])).map(v => v === null ? 0 : v);
+    const sparkColor = cls === 'good' ? p.green : cls === 'bad' ? p.rust : p.accent;
+    renderSparkline(`spark-${cfg.key}`, series, sparkColor);
+  });
+}
+
+function renderBestWorstBanner(range) {
+  const banner = document.getElementById('bestWorstBanner');
+  const vals = range
+    .map(r => ({ iso: r['ISO week'], v: toNumber(r['CSAT (avg score)']) }))
+    .filter(x => x.v !== null);
+  if (vals.length < 2) { banner.textContent = ''; return; }
+  const best = vals.reduce((a, b) => (b.v > a.v ? b : a));
+  const worst = vals.reduce((a, b) => (b.v < a.v ? b : a));
+  banner.innerHTML = `Best CSAT week in range: <strong>Week ${best.iso}</strong> (${best.v.toFixed(2)}) &nbsp;·&nbsp; Worst: <strong>Week ${worst.iso}</strong> (${worst.v.toFixed(2)})`;
+}
+
+function exportCsv() {
+  const fromIdx = Number(document.getElementById('fromFilter').value);
+  const toIdx = Number(document.getElementById('toFilter').value);
+  const range = teamRows.slice(fromIdx, toIdx + 1);
+  if (!range.length) return;
+  const headers = Object.keys(range[0]);
+  const csvRows = [headers.join(',')].concat(
+    range.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))
+  );
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fromLabel = range[0]['Week start (Monday)'].replace(/\//g, '-');
+  const toLabel = range[range.length - 1]['Week start (Monday)'].replace(/\//g, '-');
+  a.href = url;
+  a.download = `ekster-cs-team-performance_${fromLabel}_to_${toLabel}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function renderTrendCharts(rows) {
@@ -566,6 +666,7 @@ function renderAll() {
   const range = teamRows.slice(fromIdx, toIdx + 1);
 
   renderKpis(fromIdx, toIdx);
+  renderBestWorstBanner(range);
   renderTrendCharts(range);
   renderFieldsChart(activeField, teamRows[fromIdx]['Week start (Monday)'], teamRows[toIdx]['Week start (Monday)']);
   if (document.getElementById('reasonSelect').value) renderReasonTrend();
@@ -657,7 +758,13 @@ document.querySelectorAll('.field-toggle button').forEach(btn => {
       });
     });
 
+document.getElementById('exportPdf').addEventListener('click', () => window.print());
+document.getElementById('exportCsv').addEventListener('click', exportCsv);
+
+document.querySelector('.wrap').classList.add('loaded');
+
   } catch (err) {
+    document.querySelector('.wrap').classList.add('loaded');
     document.querySelector('.wrap').insertAdjacentHTML('beforeend',
       `<div class="error">Couldn't load the dashboard data: ${err.message}. Make sure the sheet is shared as "Anyone with the link can view".</div>`);
     console.error(err);
@@ -665,12 +772,14 @@ document.querySelectorAll('.field-toggle button').forEach(btn => {
 }
 
 init().catch((e) => {
+  document.querySelector('.wrap').classList.add('loaded');
   document.querySelector('.wrap').insertAdjacentHTML('beforeend',
     `<div class="error">Something broke before the dashboard could even start: ${e.message}</div>`);
   console.error(e);
 });
 
 } catch (fatalErr) {
+  document.querySelector('.wrap').classList.add('loaded');
   document.querySelector('.wrap').insertAdjacentHTML('beforeend',
     `<div class="error">Something broke before the dashboard could even start: ${fatalErr.message}</div>`);
   console.error(fatalErr);
