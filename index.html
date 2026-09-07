@@ -73,7 +73,7 @@
     color: var(--ink); border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
   }
 
-  .kpi-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 36px; }
+  .kpi-row{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 36px; }
   .kpi{ background: var(--panel); border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px; padding: 14px 16px; display:flex; flex-direction:column; justify-content: center; min-height: 84px; }
   .kpi.good{ border-left-color: var(--green); }
   .kpi.bad{ border-left-color: var(--rust); }
@@ -467,6 +467,19 @@ function aggregate(range, key, mode) {
   return null;
 }
 
+const ACCEPTED_VALUES = ['Offer Accepted - Refund', 'Offer Accepted - Store Credit', 'Offer Accepted - Additional Product Sent', 'Offer Accepted - Discount'];
+
+function computeRetentionAcceptance(fromIso, toIso) {
+  const rows = fieldsRows.filter(r => {
+    if (r['Field'] !== 'Retention Offer' || r['Value'] === 'N/A') return false;
+    const iso = toNumber(r['ISO week']);
+    return iso >= fromIso && iso <= toIso;
+  });
+  const accepted = rows.filter(r => ACCEPTED_VALUES.includes(r['Value'])).reduce((sum, r) => sum + (toNumber(r['Tickets']) || 0), 0);
+  const total = rows.reduce((sum, r) => sum + (toNumber(r['Tickets']) || 0), 0);
+  return { rate: total > 0 ? (accepted / total) * 100 : null, accepted, total };
+}
+
 function renderKpis(fromIdx, toIdx) {
   const range = teamRows.slice(fromIdx, toIdx + 1);
   const rangeLen = range.length;
@@ -474,6 +487,13 @@ function renderKpis(fromIdx, toIdx) {
   const prevRange = prevStart >= 0 ? teamRows.slice(prevStart, fromIdx) : [];
   const periodLabel = rangeLen === 1 ? 'vs last week' : `vs previous ${rangeLen} weeks`;
   const p = palette();
+
+  const fromIso = toNumber(teamRows[fromIdx]['ISO week']);
+  const toIso = toNumber(teamRows[toIdx]['ISO week']);
+  const rangeSpan = toIso - fromIso + 1;
+  const prevFromIso = fromIso - rangeSpan;
+  const retention = computeRetentionAcceptance(fromIso, toIso);
+  const retentionPrev = prevFromIso >= 1 ? computeRetentionAcceptance(prevFromIso, fromIso - 1) : { rate: null };
 
   const kpiRow = document.getElementById('kpiRow');
   kpiRow.innerHTML = KPI_CONFIGS.map(cfg => {
@@ -484,7 +504,13 @@ function renderKpis(fromIdx, toIdx) {
       <div class="value-row"><span class="value" id="value-${cfg.key}">0</span>${cfg.unit ? `<span class="unit">${cfg.unit}</span>` : ''}</div>
       <div id="wow-${cfg.key}"></div>
     </div>`;
-  }).join('');
+  }).join('') + `
+    <div class="kpi" id="kpi-retention">
+      <div class="label">Retention acceptance</div>
+      <div class="value-row"><span class="value" id="value-retention">0</span><span class="unit">%</span></div>
+      <div id="wow-retention"></div>
+      <div class="sub" style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${retention.accepted} of ${retention.total} offers</div>
+    </div>`;
 
   KPI_CONFIGS.forEach(cfg => {
     const curr = aggregate(range, cfg.metricKey, cfg.agg);
@@ -504,6 +530,19 @@ function renderKpis(fromIdx, toIdx) {
     }
     prevDisplayedValues[cfg.key] = displayCurr ?? 0;
   });
+
+  const retentionRounded = retention.rate === null ? null : round1(retention.rate);
+  const retentionCls = directionClass(retention.rate, retentionPrev.rate, true);
+  document.getElementById('kpi-retention').classList.add(retentionCls);
+  document.getElementById('wow-retention').innerHTML = wowBadge(retention.rate, retentionPrev.rate, true, periodLabel);
+  const retentionEl = document.getElementById('value-retention');
+  if (retentionRounded === null) {
+    retentionEl.textContent = '—';
+  } else {
+    const from = prevDisplayedValues.hasOwnProperty('retention') ? prevDisplayedValues['retention'] : 0;
+    animateValue(retentionEl, from, retentionRounded, 1);
+  }
+  prevDisplayedValues['retention'] = retentionRounded ?? 0;
 }
 
 function renderBestWorstBanner(range) {
@@ -604,6 +643,7 @@ function renderFieldsChart(fieldName, fromIso, toIso) {
   const p = palette();
   const rows = fieldsRows.filter(r => {
     if (r['Field'] !== fieldName) return false;
+    if (fieldName === 'Retention Offer' && r['Value'] === 'N/A') return false;
     const iso = toNumber(r['ISO week']);
     return iso >= fromIso && iso <= toIso;
   });
