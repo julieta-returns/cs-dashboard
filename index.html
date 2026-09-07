@@ -711,7 +711,7 @@ function contactReasonSeries() {
   fieldsRows.filter(r => r['Field'] === 'Contact Reason').forEach(r => {
     const value = r['Value'];
     if (!byValue[value]) byValue[value] = [];
-    byValue[value].push({ date: parseDMY(r['Week start (Monday)']), weekLabel: r['Week start (Monday)'], count: toNumber(r['Tickets']) || 0 });
+    byValue[value].push({ date: parseDMY(r['Week start (Monday)']), iso: toNumber(r['ISO week']), count: toNumber(r['Tickets']) || 0 });
   });
   Object.values(byValue).forEach(arr => arr.sort((a, b) => a.date - b.date));
   return byValue;
@@ -720,10 +720,10 @@ function contactReasonSeries() {
 // One row per Contact Reason value, evaluated as of teamRows[toIdx]'s week.
 function getContactReasonSnapshot(toIdx) {
   const series = contactReasonSeries();
-  const toWeekLabel = teamRows[toIdx]['Week start (Monday)'];
+  const toIso = toNumber(teamRows[toIdx]['ISO week']);
 
   const rows = Object.entries(series).map(([value, points]) => {
-    const idx = points.findIndex(pt => pt.weekLabel === toWeekLabel);
+    const idx = points.findIndex(pt => pt.iso === toIso);
     if (idx === -1) return null;
     const count = points[idx].count;
     const prevCount = idx > 0 ? points[idx - 1].count : null;
@@ -743,6 +743,12 @@ function getContactReasonSnapshot(toIdx) {
 
   const total = rows.reduce((sum, r) => sum + r.count, 0);
   rows.forEach(r => { r.pctOfTotal = total > 0 ? (r.count / total) * 100 : 0; });
+
+  if (!rows.length) {
+    const sampleIsos = Object.values(series)[0] ? Object.values(series)[0].map(pt => pt.iso) : [];
+    console.warn('Contact Reason snapshot came up empty. Looking for ISO week', toIso, '— ISO weeks found in Ticket fields data:', sampleIsos);
+  }
+
   return rows;
 }
 
