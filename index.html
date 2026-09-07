@@ -58,6 +58,15 @@
 
   .controls-row{ display:flex; justify-content: flex-end; align-items:center; gap: 8px; margin-bottom: 20px; }
   .range-label{ font-size: 13px; color: var(--ink-soft); }
+
+  .tabs{ display:flex; gap: 6px; margin-bottom: 20px; }
+  .tab-btn{
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500; padding: 9px 16px; cursor: pointer;
+    background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--ink-soft);
+  }
+  .tab-btn.active{ color: var(--ink); border-bottom-color: var(--accent); }
+  .tab-panel{ display: none; }
+  .tab-panel.active{ display: block; }
   select{
     font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 12px; background: var(--panel);
     color: var(--ink); border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
@@ -120,6 +129,11 @@
     </div>
   </header>
 
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="reasons">Contact Reasons</button>
+  </div>
+
   <div class="controls-row">
     <label class="range-label" for="fromFilter">From</label>
     <select id="fromFilter"><option>Loading weeks…</option></select>
@@ -127,45 +141,49 @@
     <select id="toFilter"><option>Loading weeks…</option></select>
   </div>
 
-  <div class="kpi-row" id="kpiRow">
-    <div class="kpi"><div class="label">CSAT</div><div class="value-row"><span class="value">—</span></div></div>
-    <div class="kpi"><div class="label">Resolution time</div><div class="value-row"><span class="value">—</span></div></div>
-    <div class="kpi"><div class="label">Human response time</div><div class="value-row"><span class="value">—</span></div></div>
-    <div class="kpi"><div class="label">Open tickets</div><div class="value-row"><span class="value">—</span></div></div>
-    <div class="kpi"><div class="label">Tickets created</div><div class="value-row"><span class="value">—</span></div></div>
-    <div class="kpi"><div class="label">Tickets closed</div><div class="value-row"><span class="value">—</span></div></div>
+  <div id="tabOverview" class="tab-panel active">
+    <div class="kpi-row" id="kpiRow">
+      <div class="kpi"><div class="label">CSAT</div><div class="value-row"><span class="value">—</span></div></div>
+      <div class="kpi"><div class="label">Resolution time</div><div class="value-row"><span class="value">—</span></div></div>
+      <div class="kpi"><div class="label">Human response time</div><div class="value-row"><span class="value">—</span></div></div>
+      <div class="kpi"><div class="label">Open tickets</div><div class="value-row"><span class="value">—</span></div></div>
+      <div class="kpi"><div class="label">Tickets created</div><div class="value-row"><span class="value">—</span></div></div>
+      <div class="kpi"><div class="label">Tickets closed</div><div class="value-row"><span class="value">—</span></div></div>
+    </div>
+
+    <section>
+      <h2>Trends</h2>
+      <div class="chart-grid">
+        <div class="chart-box"><h3>CSAT (avg score)</h3><canvas id="csatChart"></canvas></div>
+        <div class="chart-box"><h3>Resolution &amp; response time (hrs)</h3><canvas id="timeChart"></canvas></div>
+        <div class="chart-box" style="grid-column: 1 / -1;"><h3>Ticket volume</h3><canvas id="volumeChart"></canvas></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>What's driving contact</h2>
+      <div class="panel">
+        <div class="field-toggle">
+          <button data-field="Contact Reason" class="active">Contact Reason</button>
+          <button data-field="Retention Offer">Retention Offer</button>
+        </div>
+        <canvas id="fieldsChart" style="max-height: 420px;"></canvas>
+      </div>
+    </section>
   </div>
 
-  <section>
-    <h2>Trends</h2>
-    <div class="chart-grid">
-      <div class="chart-box"><h3>CSAT (avg score)</h3><canvas id="csatChart"></canvas></div>
-      <div class="chart-box"><h3>Resolution &amp; response time (hrs)</h3><canvas id="timeChart"></canvas></div>
-      <div class="chart-box" style="grid-column: 1 / -1;"><h3>Ticket volume</h3><canvas id="volumeChart"></canvas></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>What's driving contact</h2>
-    <div class="panel">
-      <div class="field-toggle">
-        <button data-field="Contact Reason" class="active">Contact Reason</button>
-        <button data-field="Retention Offer">Retention Offer</button>
+  <div id="tabReasons" class="tab-panel">
+    <section>
+      <h2>Contact reason evolution</h2>
+      <div class="panel">
+        <div class="controls-row" style="justify-content: flex-start; margin-bottom: 18px;">
+          <label class="range-label" for="reasonSelect">Reason</label>
+          <select id="reasonSelect"><option>Loading…</option></select>
+        </div>
+        <canvas id="reasonTrendChart" style="max-height: 320px;"></canvas>
       </div>
-      <canvas id="fieldsChart" style="max-height: 420px;"></canvas>
-    </div>
-  </section>
-
-  <section>
-    <h2>Contact reason evolution</h2>
-    <div class="panel">
-      <div class="controls-row" style="justify-content: flex-start; margin-bottom: 18px;">
-        <label class="range-label" for="reasonSelect">Reason</label>
-        <select id="reasonSelect"><option>Loading…</option></select>
-      </div>
-      <canvas id="reasonTrendChart" style="max-height: 320px;"></canvas>
-    </div>
-  </section>
+    </section>
+  </div>
 
 </div>
 
@@ -582,7 +600,17 @@ async function init() {
     populateReasonSelect();
     renderAll();
 
-    document.querySelectorAll('.field-toggle button').forEach(btn => {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const panelId = btn.dataset.tab === 'overview' ? 'tabOverview' : 'tabReasons';
+    document.getElementById(panelId).classList.add('active');
+  });
+});
+
+document.querySelectorAll('.field-toggle button').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.field-toggle button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
