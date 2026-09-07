@@ -60,7 +60,7 @@
   .controls-row{ display:flex; justify-content: flex-end; align-items:center; gap: 8px; margin-bottom: 20px; }
   .range-label{ font-size: 13px; color: var(--ink-soft); }
 
-  .tabs{ display:flex; gap: 6px; margin-bottom: 20px; }
+  .tabs{ display:flex; gap: 6px; }
   .tab-btn{
     font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500; padding: 9px 16px; cursor: pointer;
     background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--ink-soft);
@@ -141,14 +141,11 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 999px; color: var(--ink-soft); cursor: pointer;
   }
 
-  .side-index{
-    position: fixed; top: 160px; left: max(16px, calc(50% - 620px)); width: 150px;
-    font-size: 12px; display:flex; flex-direction:column; gap: 9px; z-index: 40;
+  .tabs-row{ display:flex; justify-content: space-between; align-items:center; margin-bottom: 20px; }
+  .jump-to-select{
+    font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 12px; background: var(--panel);
+    color: var(--ink-soft); border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
   }
-  .side-index-title{ font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; font-size:11px; margin-bottom:2px; }
-  .side-index a{ color:var(--ink-soft); text-decoration:none; }
-  .side-index a:hover{ color:var(--ink); }
-  @media (max-width: 1400px){ .side-index{ display:none; } }
 
   .floating-actions{ position: fixed; bottom: 24px; right: 24px; display:flex; flex-direction:column; gap: 8px; z-index: 50; }
   .floating-btn{
@@ -157,7 +154,7 @@
   }
 
   @media print {
-    .side-index, .floating-actions { display:none !important; }
+    .jump-to-select, .floating-actions { display:none !important; }
     html[data-theme="dark"]{
       --bg:#F6F3EE; --panel:#fff; --ink:#211D1A; --ink-soft:#5B554C; --line:#E3DDD1;
     }
@@ -196,24 +193,29 @@
     </div>
   </header>
 
-  <nav class="side-index" id="sideIndex">
-    <div class="side-index-title">Jump to</div>
-    <a href="#" data-tab="overview" data-target="kpiRow">Scorecards</a>
-    <a href="#" data-tab="overview" data-target="trendsSection">Trends</a>
-    <a href="#" data-tab="overview" data-target="drivingSection">What's driving contact</a>
-    <a href="#" data-tab="reasons" data-target="moversSection">Movers &amp; alerts</a>
-    <a href="#" data-tab="reasons" data-target="reasonsTableSection">Reasons table</a>
-    <a href="#" data-tab="reasons" data-target="evolutionSection">Evolution chart</a>
-  </nav>
-
   <div class="floating-actions">
     <button id="resetFiltersBtn" class="floating-btn">Reset filters</button>
     <button id="backToTopBtn" class="floating-btn">Back to top</button>
   </div>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="overview">Overview</button>
-    <button class="tab-btn" data-tab="reasons">Contact Reasons</button>
+  <div class="tabs-row">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="reasons">Contact Reasons</button>
+    </div>
+    <select id="jumpToSelect" class="jump-to-select">
+      <option value="">Jump to…</option>
+      <optgroup label="Overview">
+        <option value="overview:kpiRow">Scorecards</option>
+        <option value="overview:trendsSection">Trends</option>
+        <option value="overview:drivingSection">What's driving contact</option>
+      </optgroup>
+      <optgroup label="Contact Reasons">
+        <option value="reasons:moversSection">Movers &amp; alerts</option>
+        <option value="reasons:reasonsTableSection">Reasons table</option>
+        <option value="reasons:evolutionSection">Evolution chart</option>
+      </optgroup>
+    </select>
   </div>
 
   <div class="controls-row">
@@ -969,16 +971,16 @@ document.getElementById('backToTopBtn').addEventListener('click', () => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-document.querySelectorAll('.side-index a').forEach(link => {
-  link.addEventListener('click', (e) => {
-    e.preventDefault();
-    const tabBtn = document.querySelector(`.tab-btn[data-tab="${link.dataset.tab}"]`);
-    if (tabBtn && !tabBtn.classList.contains('active')) tabBtn.click();
-    requestAnimationFrame(() => {
-      const el = document.getElementById(link.dataset.target);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+document.getElementById('jumpToSelect').addEventListener('change', function () {
+  if (!this.value) return;
+  const [tab, targetId] = this.value.split(':');
+  const tabBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  if (tabBtn && !tabBtn.classList.contains('active')) tabBtn.click();
+  requestAnimationFrame(() => {
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+  this.value = '';
 });
 
 document.querySelector('.wrap').classList.add('loaded');
