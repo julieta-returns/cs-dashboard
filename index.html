@@ -79,9 +79,17 @@
   .kpi.bad{ border-left-color: var(--rust); }
   .kpi.flat{ border-left-color: var(--line); }
   .kpi .sparkline{ width: 100%; height: 26px; margin-top: 6px; display: block; }
-  .kpi .label{ font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
-  .info-icon{ cursor: help; opacity: 0.7; }
+  .kpi .label{ font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; position: relative; }
+  .info-icon{ cursor: pointer; opacity: 0.7; display: inline-flex; vertical-align: middle; }
+  .info-icon svg{ width: 13px; height: 13px; }
   .info-icon:hover{ opacity: 1; }
+  .info-popover{
+    display: none; position: absolute; top: 100%; left: 0; z-index: 30; margin-top: 6px;
+    width: 220px; font-size: 11px; line-height: 1.4; font-weight: 400; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  }
+  .info-popover.open{ display: block; }
   .kpi .value-row{ display:flex; align-items: baseline; gap: 6px; flex-wrap: nowrap; }
   .kpi .value{ font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; }
   .kpi .unit{ font-size: 12px; color: var(--ink-soft); }
@@ -508,7 +516,10 @@ function renderKpis(fromIdx, toIdx) {
   }).join('') + `
     <div class="kpi" id="kpi-retention">
       <div class="label">Retention acceptance
-        <span class="info-icon" title="Offer Accepted (all 4 variants: Refund, Store Credit, Additional Product Sent, Discount) ÷ (Accepted + Declined + Offer Sent - Waiting). Excludes N/A and Exchange from both sides.">ⓘ</span>
+        <span class="info-icon" id="retentionInfoIcon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/></svg>
+        </span>
+        <div class="info-popover" id="retentionInfoPopover">Offer Accepted (all 4 variants: Refund, Store Credit, Additional Product Sent, Discount) divided by (Accepted + Declined + Offer Sent - Waiting). Excludes N/A and Exchange from both sides.</div>
       </div>
       <div class="value-row"><span class="value" id="value-retention">0</span><span class="unit">%</span></div>
       <div id="wow-retention"></div>
@@ -1080,6 +1091,16 @@ document.querySelectorAll('.field-toggle button').forEach(btn => {
 
 document.getElementById('exportPdf').addEventListener('click', () => window.print());
 document.getElementById('exportCsv').addEventListener('click', exportCsv);
+
+document.addEventListener('click', (e) => {
+  const popover = document.getElementById('retentionInfoPopover');
+  if (!popover) return;
+  if (e.target.closest('#retentionInfoIcon')) {
+    popover.classList.toggle('open');
+  } else if (!e.target.closest('.info-popover')) {
+    popover.classList.remove('open');
+  }
+});
 
 document.getElementById('resetFiltersBtn').addEventListener('click', () => {
   document.getElementById('fromFilter').value = teamRows.length - 1;
