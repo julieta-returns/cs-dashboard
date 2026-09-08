@@ -470,7 +470,7 @@ const ACCEPTED_VALUES = ['Offer Accepted - Refund', 'Offer Accepted - Store Cred
 
 function computeRetentionAcceptance(fromIso, toIso) {
   const rows = fieldsRows.filter(r => {
-    if (r['Field'] !== 'Retention Offer' || r['Value'] === 'N/A') return false;
+    if (r['Field'] !== 'Retention Offer' || r['Value'] === 'N/A' || r['Value'] === 'Exchange') return false;
     const iso = toNumber(r['ISO week']);
     return iso >= fromIso && iso <= toIso;
   });
