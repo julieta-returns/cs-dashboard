@@ -531,7 +531,7 @@ function renderKpis(fromIdx, toIdx) {
     prevDisplayedValues[cfg.key] = displayCurr ?? 0;
   });
 
-  const retentionRounded = retention.rate === null ? null : round1(retention.rate);
+  const retentionRounded = retention.rate === null ? null : Math.round(retention.rate);
   const retentionCls = directionClass(retention.rate, retentionPrev.rate, true);
   document.getElementById('kpi-retention').classList.add(retentionCls);
   document.getElementById('wow-retention').innerHTML = wowBadge(retention.rate, retentionPrev.rate, true, periodLabel);
@@ -540,7 +540,7 @@ function renderKpis(fromIdx, toIdx) {
     retentionEl.textContent = '—';
   } else {
     const from = prevDisplayedValues.hasOwnProperty('retention') ? prevDisplayedValues['retention'] : 0;
-    animateValue(retentionEl, from, retentionRounded, 1);
+    animateValue(retentionEl, from, retentionRounded, 0);
   }
   prevDisplayedValues['retention'] = retentionRounded ?? 0;
 }
@@ -738,6 +738,18 @@ function populateReasonSelect() {
     if (!reasonHierarchy[parent]) reasonHierarchy[parent] = [];
     reasonHierarchy[parent].push({ value, child, count });
   });
+
+  // Retention Offer isn't a Contact Reason sub-value, it's a separate field
+  // tied to Return tickets — added here as its own category so each outcome
+  // can be viewed as its own line, same as any other reason.
+  const retentionTotals = {};
+  fieldsRows.filter(r => r['Field'] === 'Retention Offer' && r['Value'] !== 'N/A').forEach(r => {
+    retentionTotals[r['Value']] = (retentionTotals[r['Value']] || 0) + (toNumber(r['Tickets']) || 0);
+  });
+  if (Object.keys(retentionTotals).length) {
+    reasonHierarchy['Retention Offer'] = Object.entries(retentionTotals).map(([value, count]) => ({ value, child: value, count }));
+  }
+
   Object.values(reasonHierarchy).forEach(list => list.sort((a, b) => b.count - a.count));
 
   const parentTotals = Object.entries(reasonHierarchy).map(([parent, list]) => ({
@@ -780,7 +792,7 @@ function renderReasonTrend() {
 
   const p = palette();
   const rows = fieldsRows
-    .filter(r => r['Field'] === 'Contact Reason' && r['Value'] === reason)
+    .filter(r => (r['Field'] === 'Contact Reason' || r['Field'] === 'Retention Offer') && r['Value'] === reason)
     .filter(r => { const iso = toNumber(r['ISO week']); return iso >= fromIso && iso <= toIso; })
     .sort((a, b) => parseDMY(a['Week start (Monday)']) - parseDMY(b['Week start (Monday)']));
 
