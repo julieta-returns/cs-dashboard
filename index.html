@@ -80,6 +80,8 @@
   .kpi.flat{ border-left-color: var(--line); }
   .kpi .sparkline{ width: 100%; height: 26px; margin-top: 6px; display: block; }
   .kpi .label{ font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+  .info-icon{ cursor: help; opacity: 0.7; }
+  .info-icon:hover{ opacity: 1; }
   .kpi .value-row{ display:flex; align-items: baseline; gap: 6px; flex-wrap: nowrap; }
   .kpi .value{ font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; }
   .kpi .unit{ font-size: 12px; color: var(--ink-soft); }
@@ -505,7 +507,9 @@ function renderKpis(fromIdx, toIdx) {
     </div>`;
   }).join('') + `
     <div class="kpi" id="kpi-retention">
-      <div class="label">Retention acceptance</div>
+      <div class="label">Retention acceptance
+        <span class="info-icon" title="Offer Accepted (all 4 variants: Refund, Store Credit, Additional Product Sent, Discount) ÷ (Accepted + Declined + Offer Sent - Waiting). Excludes N/A and Exchange from both sides.">ⓘ</span>
+      </div>
       <div class="value-row"><span class="value" id="value-retention">0</span><span class="unit">%</span></div>
       <div id="wow-retention"></div>
       <div class="sub" style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${retention.accepted} of ${retention.total} offers</div>
