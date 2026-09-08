@@ -242,7 +242,8 @@
       <div class="chart-grid">
         <div class="chart-box"><h3>CSAT (avg score)</h3><canvas id="csatChart"></canvas></div>
         <div class="chart-box"><h3>Resolution &amp; response time (hrs)</h3><canvas id="timeChart"></canvas></div>
-        <div class="chart-box" style="grid-column: 1 / -1;"><h3>Ticket volume</h3><canvas id="volumeChart"></canvas></div>
+        <div class="chart-box"><h3>Open tickets</h3><canvas id="openChart"></canvas></div>
+        <div class="chart-box" style="grid-column: 1 / -1;"><h3>Ticket volume (created / closed)</h3><canvas id="volumeChart"></canvas></div>
       </div>
     </section>
 
@@ -261,8 +262,6 @@
   <div id="tabReasons" class="tab-panel">
 
     <div class="banner" id="reasonsWeekNote"></div>
-
-    <div class="alerts" id="reasonAlerts"></div>
 
     <section id="moversSection">
       <h2>Biggest movers this week</h2>
@@ -616,6 +615,20 @@ function renderTrendCharts(rows) {
     },
   });
 
+  destroyChart('open');
+  charts.open = new Chart(document.getElementById('openChart'), {
+    type: 'line',
+    data: { labels, datasets: [{ label: 'Open tickets', data: rows.map(r => toNumber(r['Open tickets'])), borderColor: p.rust, backgroundColor: p.rust, tension: 0.25, pointRadius: 2, fill: false }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: p.line }, ticks: { color: p.soft, precision: 0 } },
+        x: { grid: { display: false }, ticks: { ...thinTicks(), color: p.soft } },
+      },
+    },
+  });
+
   destroyChart('volume');
   charts.volume = new Chart(document.getElementById('volumeChart'), {
     type: 'bar',
@@ -624,7 +637,6 @@ function renderTrendCharts(rows) {
       datasets: [
         { label: 'Created', data: rows.map(r => toNumber(r['Tickets created'])), backgroundColor: p.accent },
         { label: 'Closed', data: rows.map(r => toNumber(r['Tickets closed'])), backgroundColor: p.gold },
-        { label: 'Open (end of week)', data: rows.map(r => toNumber(r['Open tickets'])), backgroundColor: p.rust },
       ],
     },
     options: {
@@ -889,9 +901,9 @@ function getContactReasonSnapshot(toIdx) {
     const trailingAvg = trailing.length ? trailing.reduce((a, b) => a + b.count, 0) / trailing.length : null;
     const hasHistory = idx > 0;
     const isNew = hasHistory && trailingAvg === 0 && count > 0;
-    const isSpike = !isNew && trailingAvg !== null && trailingAvg > 0 && count >= 10 && count >= trailingAvg * 2;
-    const spikeRatio = (trailingAvg && trailingAvg > 0) ? count / trailingAvg : null;
     const { parent, child } = splitParentChild(value);
+    const isSpike = !isNew && parent !== 'Other' && trailingAvg !== null && trailingAvg > 0 && count >= 10 && count >= trailingAvg * 2;
+    const spikeRatio = (trailingAvg && trailingAvg > 0) ? count / trailingAvg : null;
     return {
       value, parent, child, count, prevCount, trailingAvg,
       deltaAbs: prevCount === null ? null : count - prevCount,
@@ -909,27 +921,6 @@ function getContactReasonSnapshot(toIdx) {
   }
 
   return rows;
-}
-
-function renderReasonAlerts(snapshot) {
-  const el = document.getElementById('reasonAlerts');
-  const spikes = snapshot.filter(r => r.isSpike).sort((a, b) => b.spikeRatio - a.spikeRatio).slice(0, 5);
-  const news = snapshot.filter(r => r.isNew).sort((a, b) => b.count - a.count).slice(0, 5);
-
-  if (!spikes.length && !news.length) { el.innerHTML = ''; return; }
-
-  const spikeHtml = spikes.map(r => `
-    <div class="alert-item spike">
-      <span class="tag">Spike</span>
-      <span>${r.child} (${r.parent}): <strong>${r.count}</strong> tickets this week, vs a ${r.trailingAvg.toFixed(1)} average the past ${Math.min(4, spikes.length)} weeks</span>
-    </div>`).join('');
-  const newHtml = news.map(r => `
-    <div class="alert-item new">
-      <span class="tag">New</span>
-      <span>${r.child} (${r.parent}): <strong>${r.count}</strong> tickets this week, was 0 before that</span>
-    </div>`).join('');
-
-  el.innerHTML = spikeHtml + newHtml;
 }
 
 function renderMovers(snapshot) {
@@ -957,9 +948,10 @@ function renderReasonsTable(snapshot) {
     const deltaText = r.deltaAbs === null ? 'n/a' : `${r.deltaAbs > 0 ? '+' : ''}${r.deltaAbs}`;
     const pctText = r.deltaPct === null ? 'n/a' : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct.toFixed(0)}%`;
     const deltaColor = r.deltaAbs === null ? 'var(--ink-soft)' : r.deltaAbs > 0 ? 'var(--rust)' : r.deltaAbs < 0 ? 'var(--green)' : 'var(--ink-soft)';
+    const flag = r.isSpike ? '<span title="Spike: 2x+ its 4-week average">🔺</span> ' : r.isNew ? '<span title="New: had 0 tickets before this week">🆕</span> ' : '';
     return `<tr>
       <td>${r.parent}</td>
-      <td>${r.child}</td>
+      <td>${flag}${r.child}</td>
       <td>${r.count}</td>
       <td>${r.pctOfTotal.toFixed(1)}%</td>
       <td style="color:${deltaColor}">${deltaText}</td>
@@ -973,11 +965,10 @@ function renderReasonInsights(fromIdx, toIdx) {
   const prevRow = toIdx > 0 ? teamRows[toIdx - 1] : null;
   const note = document.getElementById('reasonsWeekNote');
   note.innerHTML = prevRow
-    ? `Alerts, movers, and the table below all compare <strong>Week ${toRow['ISO week']} · ${toRow['Week start (Monday)']}</strong> against <strong>Week ${prevRow['ISO week']}</strong> — always the "To" week vs the week right before it, regardless of what "From" is set to. Only the evolution chart at the bottom uses the full From–To range.`
+    ? `Movers and the table below all compare <strong>Week ${toRow['ISO week']} · ${toRow['Week start (Monday)']}</strong> against <strong>Week ${prevRow['ISO week']}</strong> — always the "To" week vs the week right before it, regardless of what "From" is set to. Only the evolution chart at the bottom uses the full From–To range. 🔺 in the table marks a spike (2x+ its 4-week average), 🆕 marks a value that had zero tickets before this week.`
     : `Showing <strong>Week ${toRow['ISO week']} · ${toRow['Week start (Monday)']}</strong> — no earlier week available to compare against.`;
 
   const snapshot = getContactReasonSnapshot(toIdx);
-  renderReasonAlerts(snapshot);
   renderMovers(snapshot);
   renderReasonsTable(snapshot);
 }
