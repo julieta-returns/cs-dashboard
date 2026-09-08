@@ -684,6 +684,7 @@ function renderFieldsChart(fieldName, fromIso, toIso) {
                   text: `${label} — ${total > 0 ? ((data[i] / total) * 100).toFixed(1) : 0}%`,
                   fillStyle: chart.data.datasets[0].backgroundColor[i],
                   strokeStyle: chart.data.datasets[0].backgroundColor[i],
+                  fontColor: p.soft,
                   index: i,
                 }));
               },
