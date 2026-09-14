@@ -73,10 +73,12 @@
     color: var(--ink); border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
   }
 
-  .kpi-row{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 36px; }
+  .kpi-group{ margin-bottom: 20px; }
+  .kpi-group-title{ font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+  .kpi-row{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
   .kpi{ background: var(--panel); border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px; padding: 14px 16px; display:flex; flex-direction:column; justify-content: center; min-height: 84px; }
-  .kpi.good{ border-left-color: var(--green); }
-  .kpi.bad{ border-left-color: var(--rust); }
+  .kpi.good{ border-left-color: var(--green); border-left-width: 5px; background: color-mix(in srgb, var(--green) 7%, var(--panel)); }
+  .kpi.bad{ border-left-color: var(--rust); border-left-width: 5px; background: color-mix(in srgb, var(--rust) 7%, var(--panel)); }
   .kpi.flat{ border-left-color: var(--line); }
   .kpi .sparkline{ width: 100%; height: 26px; margin-top: 6px; display: block; }
   .kpi .label{ font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; position: relative; }
@@ -236,13 +238,22 @@
   </div>
 
   <div id="tabOverview" class="tab-panel active">
-    <div class="kpi-row" id="kpiRow">
-      <div class="kpi"><div class="label">CSAT</div><div class="value-row"><span class="value">—</span></div></div>
-      <div class="kpi"><div class="label">Resolution time</div><div class="value-row"><span class="value">—</span></div></div>
-      <div class="kpi"><div class="label">Human response time</div><div class="value-row"><span class="value">—</span></div></div>
-      <div class="kpi"><div class="label">Open tickets</div><div class="value-row"><span class="value">—</span></div></div>
-      <div class="kpi"><div class="label">Tickets created</div><div class="value-row"><span class="value">—</span></div></div>
-      <div class="kpi"><div class="label">Tickets closed</div><div class="value-row"><span class="value">—</span></div></div>
+    <div class="kpi-group">
+      <div class="kpi-group-title">Quality &amp; speed</div>
+      <div class="kpi-row" id="kpiRowQuality">
+        <div class="kpi"><div class="label">CSAT</div><div class="value-row"><span class="value">—</span></div></div>
+        <div class="kpi"><div class="label">Resolution time</div><div class="value-row"><span class="value">—</span></div></div>
+        <div class="kpi"><div class="label">Human response time</div><div class="value-row"><span class="value">—</span></div></div>
+      </div>
+    </div>
+
+    <div class="kpi-group">
+      <div class="kpi-group-title">Volume</div>
+      <div class="kpi-row" id="kpiRowVolume">
+        <div class="kpi"><div class="label">Open tickets</div><div class="value-row"><span class="value">—</span></div></div>
+        <div class="kpi"><div class="label">Tickets created</div><div class="value-row"><span class="value">—</span></div></div>
+        <div class="kpi"><div class="label">Tickets closed</div><div class="value-row"><span class="value">—</span></div></div>
+      </div>
     </div>
 
     <div class="banner" id="bestWorstBanner"></div>
@@ -460,12 +471,12 @@ function renderSparkline(canvasId, series, color) {
 }
 
 const KPI_CONFIGS = [
-  { key: 'csat', label: 'CSAT', metricKey: 'CSAT (avg score)', unit: '', decimals: 1, higherIsBetter: true, agg: 'avg' },
-  { key: 'res', label: 'Resolution time', metricKey: 'Resolution time (hrs)', unit: 'hrs', decimals: 1, higherIsBetter: false, agg: 'avg' },
-  { key: 'rt', label: 'Human response time', metricKey: 'Human response time (hrs)', unit: 'hrs', decimals: 1, higherIsBetter: false, agg: 'avg' },
-  { key: 'open', label: 'Open tickets', metricKey: 'Open tickets', unit: '', decimals: 0, higherIsBetter: false, agg: 'last' },
-  { key: 'created', label: 'Tickets created', metricKey: 'Tickets created', unit: '', decimals: 0, higherIsBetter: null, agg: 'sum' },
-  { key: 'closed', label: 'Tickets closed', metricKey: 'Tickets closed', unit: '', decimals: 0, higherIsBetter: null, agg: 'sum' },
+  { key: 'csat', label: 'CSAT', metricKey: 'CSAT (avg score)', unit: '', decimals: 1, higherIsBetter: true, agg: 'avg', group: 'quality' },
+  { key: 'res', label: 'Resolution time', metricKey: 'Resolution time (hrs)', unit: 'hrs', decimals: 1, higherIsBetter: false, agg: 'avg', group: 'quality' },
+  { key: 'rt', label: 'Human response time', metricKey: 'Human response time (hrs)', unit: 'hrs', decimals: 1, higherIsBetter: false, agg: 'avg', group: 'quality' },
+  { key: 'open', label: 'Open tickets', metricKey: 'Open tickets', unit: '', decimals: 0, higherIsBetter: false, agg: 'last', group: 'volume' },
+  { key: 'created', label: 'Tickets created', metricKey: 'Tickets created', unit: '', decimals: 0, higherIsBetter: null, agg: 'sum', group: 'volume' },
+  { key: 'closed', label: 'Tickets closed', metricKey: 'Tickets closed', unit: '', decimals: 0, higherIsBetter: null, agg: 'sum', group: 'volume' },
 ];
 let prevDisplayedValues = {};
 
@@ -504,8 +515,7 @@ function renderKpis(fromIdx, toIdx) {
   const retention = computeRetentionAcceptance(fromIso, toIso);
   const retentionPrev = prevFromIso >= 1 ? computeRetentionAcceptance(prevFromIso, fromIso - 1) : { rate: null };
 
-  const kpiRow = document.getElementById('kpiRow');
-  kpiRow.innerHTML = KPI_CONFIGS.map(cfg => {
+  const cardHtml = (cfg) => {
     const suffix = rangeLen > 1 ? (cfg.agg === 'avg' ? ' (avg)' : cfg.agg === 'sum' ? ' (total)' : ' (end of range)') : '';
     return `
     <div class="kpi" id="kpi-${cfg.key}">
@@ -513,7 +523,9 @@ function renderKpis(fromIdx, toIdx) {
       <div class="value-row"><span class="value" id="value-${cfg.key}">0</span>${cfg.unit ? `<span class="unit">${cfg.unit}</span>` : ''}</div>
       <div id="wow-${cfg.key}"></div>
     </div>`;
-  }).join('') + `
+  };
+
+  const retentionCardHtml = `
     <div class="kpi" id="kpi-retention">
       <div class="label">Retention acceptance
         <span class="info-icon" id="retentionInfoIcon">
@@ -525,6 +537,11 @@ function renderKpis(fromIdx, toIdx) {
       <div id="wow-retention"></div>
       <div class="sub" style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${retention.accepted} of ${retention.total} offers</div>
     </div>`;
+
+  document.getElementById('kpiRowQuality').innerHTML =
+    KPI_CONFIGS.filter(c => c.group === 'quality').map(cardHtml).join('') + retentionCardHtml;
+  document.getElementById('kpiRowVolume').innerHTML =
+    KPI_CONFIGS.filter(c => c.group === 'volume').map(cardHtml).join('');
 
   KPI_CONFIGS.forEach(cfg => {
     const curr = aggregate(range, cfg.metricKey, cfg.agg);
@@ -939,7 +956,7 @@ function getContactReasonSnapshot(toIdx) {
 }
 
 function renderMovers(snapshot) {
-  const withDelta = snapshot.filter(r => r.deltaPct !== null && r.deltaPct !== 0);
+  const withDelta = snapshot.filter(r => r.deltaPct !== null && Math.abs(r.deltaAbs) >= 10);
   const up = withDelta.filter(r => r.deltaPct > 0).sort((a, b) => b.deltaPct - a.deltaPct).slice(0, 3);
   const down = withDelta.filter(r => r.deltaPct < 0).sort((a, b) => a.deltaPct - b.deltaPct).slice(0, 3);
 
