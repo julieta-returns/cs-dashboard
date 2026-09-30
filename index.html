@@ -413,6 +413,7 @@ function wowBadge(curr, prev, higherIsBetter, periodLabel) {
 // ---- STATE ---------------------------------------------------------------
 let teamRows = [];
 let fieldsRows = [];
+let trustpilotRows = [];
 let charts = {};
 let activeField = 'Contact Reason';
 
@@ -489,6 +490,24 @@ function aggregate(range, key, mode) {
 
 const ACCEPTED_VALUES = ['Offer Accepted - Refund', 'Offer Accepted - Store Credit', 'Offer Accepted - Additional Product Sent', 'Offer Accepted - Discount'];
 
+function getTrustpilotSnapshot(toIso) {
+  const sorted = trustpilotRows
+    .map(r => ({ iso: toNumber(r['ISO week']), score: toNumber(r['Score']) }))
+    .filter(r => r.iso !== null && r.score !== null)
+    .sort((a, b) => a.iso - b.iso);
+
+  let idx = sorted.findIndex(r => r.iso === toIso);
+  if (idx === -1) {
+    // She logs this by hand, so a given week might not have a row yet —
+    // fall back to the most recent entry at or before this week.
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (sorted[i].iso <= toIso) { idx = i; break; }
+    }
+  }
+  if (idx === -1) return { score: null, prevScore: null };
+  return { score: sorted[idx].score, prevScore: idx > 0 ? sorted[idx - 1].score : null };
+}
+
 function computeRetentionAcceptance(fromIso, toIso) {
   const rows = fieldsRows.filter(r => {
     if (r['Field'] !== 'Retention Offer' || r['Value'] === 'N/A' || r['Value'] === 'Exchange') return false;
@@ -538,8 +557,16 @@ function renderKpis(fromIdx, toIdx) {
       <div class="sub" style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${retention.accepted} of ${retention.total} offers</div>
     </div>`;
 
+  const trustpilot = getTrustpilotSnapshot(toIso);
+  const trustpilotCardHtml = `
+    <div class="kpi" id="kpi-trustpilot">
+      <div class="label">Trustpilot</div>
+      <div class="value-row"><span class="value" id="value-trustpilot">0</span><span class="unit">/ 5</span></div>
+      <div id="wow-trustpilot"></div>
+    </div>`;
+
   document.getElementById('kpiRowQuality').innerHTML =
-    KPI_CONFIGS.filter(c => c.group === 'quality').map(cardHtml).join('') + retentionCardHtml;
+    KPI_CONFIGS.filter(c => c.group === 'quality').map(cardHtml).join('') + retentionCardHtml + trustpilotCardHtml;
   document.getElementById('kpiRowVolume').innerHTML =
     KPI_CONFIGS.filter(c => c.group === 'volume').map(cardHtml).join('');
 
@@ -574,6 +601,19 @@ function renderKpis(fromIdx, toIdx) {
     animateValue(retentionEl, from, retentionRounded, 0);
   }
   prevDisplayedValues['retention'] = retentionRounded ?? 0;
+
+  const trustpilotRounded = trustpilot.score === null ? null : round1(trustpilot.score);
+  const trustpilotCls = directionClass(trustpilot.score, trustpilot.prevScore, true);
+  document.getElementById('kpi-trustpilot').classList.add(trustpilotCls);
+  document.getElementById('wow-trustpilot').innerHTML = wowBadge(trustpilot.score, trustpilot.prevScore, true, 'vs last logged score');
+  const trustpilotEl = document.getElementById('value-trustpilot');
+  if (trustpilotRounded === null) {
+    trustpilotEl.textContent = '—';
+  } else {
+    const from = prevDisplayedValues.hasOwnProperty('trustpilot') ? prevDisplayedValues['trustpilot'] : 0;
+    animateValue(trustpilotEl, from, trustpilotRounded, 1);
+  }
+  prevDisplayedValues['trustpilot'] = trustpilotRounded ?? 0;
 }
 
 function renderBestWorstBanner(range) {
@@ -1069,15 +1109,17 @@ async function init() {
     try { savedTheme = localStorage.getItem('ekster-cs-theme') || 'dark'; } catch (e) {}
     applyTheme(savedTheme);
 
-    const [team, fields] = await Promise.all([
+    const [team, fields, trustpilot] = await Promise.all([
       fetchTab('Team performance'),
       fetchTab('Ticket fields'),
+      fetchTab('Trustpilot').catch((e) => { console.warn('Trustpilot tab failed to load:', e); return []; }),
     ]);
 
     if (!team.length) throw new Error('The "Team performance" tab came back empty.');
 
     teamRows = team;
     fieldsRows = fields;
+    trustpilotRows = trustpilot;
 
     document.getElementById('updated').textContent =
       'Checked ' + new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
